@@ -843,6 +843,19 @@ import Testing
     #expect(resizedPager.cachedTranscriptLines?.isEmpty == false)
   }
 
+  @Test func transcriptPagerMovementSaturatesAfterJumpingToTop() {
+    var pager = CodexTranscriptPager()
+
+    pager.jumpToTop()
+    pager.scrollUp()
+    #expect(pager.scrollFromBottom == Int.max)
+
+    pager.scrollDown(Int.max)
+    #expect(pager.scrollFromBottom == 0)
+    pager.scrollUp(Int.max)
+    #expect(pager.scrollFromBottom == Int.max)
+  }
+
   @Test func ordinaryOverlaysDoNotRepaintCommittedNativeHistoryIntoTheLiveViewport() {
     let model = CodexSessionModel(
       snapshot: CodexSnapshot(

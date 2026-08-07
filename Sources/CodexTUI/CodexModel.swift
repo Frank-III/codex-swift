@@ -769,7 +769,9 @@ public struct CodexTranscriptPager: Hashable, Sendable {
   public var followsLiveTail: Bool { scrollFromBottom == 0 }
 
   public mutating func scrollUp(_ rows: Int = 1) {
-    scrollFromBottom = min(Int.max, scrollFromBottom + max(0, rows))
+    let distance = max(0, rows)
+    let result = scrollFromBottom.addingReportingOverflow(distance)
+    scrollFromBottom = result.overflow ? .max : result.partialValue
   }
 
   public mutating func scrollDown(_ rows: Int = 1) {
