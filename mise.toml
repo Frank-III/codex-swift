@@ -1,0 +1,14 @@
+[tasks.build]
+run = "swift build"
+
+[tasks.test]
+run = "swift test"
+
+[tasks.demo]
+run = "swift run codex-swift --demo"
+
+[tasks.format]
+run = "swift-format format --in-place --recursive Sources Tests"
+
+[tasks.lint]
+run = "swift-format lint --strict Package.swift && swift-format lint --strict --recursive Sources Tests"
