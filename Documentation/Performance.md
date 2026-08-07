@@ -62,19 +62,26 @@ continuity, though it still does not emulate a terminal's visual scrollback impl
 
 ## Baseline results
 
-Measured on the development Apple Silicon host with optimized builds:
+Median of three optimized runs on the development Apple Silicon host. Each row starts a fresh process, so its cold
+frame begins with empty application and syntax-highlight caches:
 
 | Turns | Entries | Source | Cold frame | Key p95 | Append | Width replay | Pager open / scroll | RSS cold / replay |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 5,082 | 3.4 MiB | 1.49 s | 0.06 ms | 2.0 ms | 1.50 s | 0.19 / 0.15 ms | 90 / 140 MiB |
-| 2,000 | 10,165 | 6.8 MiB | 2.97 s | 0.06 ms | 4.5 ms | 2.97 s | 0.27 / 0.16 ms | 162 / 262 MiB |
-| 5,000 | 25,415 | 17.0 MiB | 7.46 s | 0.13 ms | 13.7 ms | 7.52 s | 0.24 / 0.21 ms | 386 / 636 MiB |
+| 1,000 | 5,082 | 3.4 MiB | 0.39 s | 0.07 ms | 2.4 ms | 0.39 s | 0.19 / 0.14 ms | 45 / 49 MiB |
+| 2,000 | 10,165 | 6.8 MiB | 0.79 s | 0.07 ms | 4.7 ms | 0.78 s | 0.18 / 0.14 ms | 70 / 78 MiB |
+| 5,000 | 25,415 | 17.0 MiB | 1.98 s | 0.07 ms | 12.5 ms | 1.97 s | 0.19 / 0.14 ms | 156 / 176 MiB |
 
 The 5,000-turn case is intentionally pathological and greatly exceeds a normal model context. Ordinary
 editing remains independent of transcript length because the app caches the canonical document and only
 renders the mutable live tail. Transcript mutations still reconcile canonical identity. Cold load and width
 reflow remain linear because canonical presentation is reconstructed, but native terminal replay is capped to
 the newest 1,000 rendered rows. The complete source remains available in the transcript pager.
+
+Sampling the 2,000-turn cold path attributed most prior CPU time to repeatedly tokenizing fenced Swift and shell
+lines through ICU regular expressions. `TerminalSyntaxHighlighter` now owns a private bounded cache keyed by source,
+language, complete theme, and background. It is independent of width, so reflow reuses tokenized spans while Codex
+rebuilds wrapping and terminal rows. The fixture intentionally repeats one fenced Swift snippet, making the improvement
+larger than a session containing only unique code; unique shell commands still parse normally.
 
 The pager reuses the already rendered transcript cache and Ratatui's `ScrollViewport` row geometry. Only the
 visible row range is passed to `Paragraph`; opening or scrolling no longer reparses Markdown, measures tens of
@@ -103,4 +110,6 @@ creating long blank regions and withholding input until thousands of writes comp
 canonical rows into bounded render buffers and marks them as one history batch; the backend clears once,
 streams continuation chunks, and reserves the composer only after the final chunk. A 1,000-turn PTY soak
 then reached output quiescence in 2.70 seconds, accepted a new chat, completed the simulated response in
-3.22 seconds, emitted 3.12 MB, and peaked near 96 MiB on the development host.
+3.22 seconds, emitted 3.12 MB, and peaked near 96 MiB on the development host. After replay capping and bounded
+syntax-highlight reuse, three 2,000-turn deterministic PTY runs reached startup quiescence in 1.23–1.76 seconds,
+emitted about 89.5 KiB, and peaked near 73 MiB. The quiescence timer includes a deliberate 0.4-second quiet window.
