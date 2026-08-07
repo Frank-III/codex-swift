@@ -14,8 +14,20 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
     var width: Int
     var rawOutputMode: Bool
     var syntaxTheme: SyntaxTheme
-    var prependSeparator: Bool
     var lines: [Line]
+  }
+
+  private struct PreparedHistoryBlock {
+    var sourceIndex: Int
+    var id: String
+    var lines: [Line]
+    var isComplete: Bool
+    var isUser: Bool
+  }
+
+  private struct IndexedHistoryBlock {
+    var sourceIndex: Int
+    var block: InlineDocumentBlock<String>
   }
 
   private struct CachedInlineDocument {
@@ -44,7 +56,13 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   private var cachedInlineDocument: CachedInlineDocument?
   private var inlineDocumentRevision: UInt64 = 0
   private var historyReplayWindow: HistoryReplayWindow?
+  private var lastKnownTerminalWidth: Int?
+  private var resizeReflowDeadline: ContinuousClock.Instant?
+  private var pendingResizeWidth: Int?
+  private let resizeReflowClock = ContinuousClock()
+  private let resizeReflowDebounce: Duration = .milliseconds(75)
   private let historyReplayRowLimit = 1_000
+  private let historyReplayReanchorRowLimit = 2_000
 
   public init(
     model: CodexSessionModel, driver: any CodexConversationDriving,
@@ -58,7 +76,7 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   // Codex already owns a complete event/stream redraw scheduler. Automatic Observation invalidation would
   // duplicate those frames and can expose transient multi-property model updates as visible flashes.
   public var automaticallyTracksObservableState: Bool { false }
-  public var needsPeriodicRedraw: Bool { model.isWorking }
+  public var needsPeriodicRedraw: Bool { model.isWorking || resizeReflowDeadline != nil }
 
   public var body: CodexScreen {
     var snapshot = model.snapshot
@@ -103,6 +121,18 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   }
 
   public func inlineDocument(size: Size) -> InlineDocument<String>? {
+    if let deadline = resizeReflowDeadline {
+      guard resizeReflowClock.now >= deadline else { return nil }
+      resizeReflowDeadline = nil
+      let targetWidth = pendingResizeWidth ?? size.width
+      pendingResizeWidth = nil
+      lastKnownTerminalWidth = targetWidth
+      if case .transcript = model.overlay {
+        // Keep the existing pager projection responsive while it owns the screen. Closing the overlay
+        // lets the normal source-backed history rebuild at the settled width.
+        return nil
+      }
+    }
     guard model.overlay == nil else { return nil }
     if let cached = cachedInlineDocument,
       cached.sessionID == model.sessionID,
@@ -117,77 +147,16 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       historyRenderCache.removeAll(keepingCapacity: true)
       historyRenderCacheSessionID = model.sessionID
     }
+
     let renderer = CodexScreen(snapshot: model.snapshot)
-    let wrap: WrapMode = model.rawOutputMode ? .character : .word
-    var blocks: [InlineDocumentBlock<String>] = []
-    blocks.reserveCapacity(model.entries.count)
-    var hasRows = false
-    var lastWasUser = false
-
-    for entry in model.entries {
-      let complete = historyEntryIsComplete(entry)
-      let currentIsUser: Bool = if case .user = entry.content { true } else { false }
-      var rendered = entry
-      var omitsHistory = false
-
-      switch entry.content {
-      case .assistant(let text, let streaming):
-        let source = streaming ? entry.streamingMarkdown?.stableSource ?? "" : text
-        rendered.content = .assistant(source, streaming: false)
-        rendered.streamingMarkdown = nil
-        omitsHistory = streaming && source.isEmpty
-      case .reasoning(let summary, let body, let streaming):
-        let source = streaming ? entry.streamingMarkdown?.stableSource ?? "" : (body ?? summary)
-        rendered.content = .reasoning(summary: summary, body: source, streaming: false)
-        rendered.streamingMarkdown = nil
-        omitsHistory = streaming && source.isEmpty
-      case .tool(let tool) where tool.status == .running:
-        omitsHistory = true
-      default:
-        break
-      }
-
-      let prependSeparator = hasRows && !lastWasUser && !currentIsUser
-      let lines: [Line]
-      if omitsHistory {
-        // Mutable content without a stable source belongs only to the retained viewport. Rendering a
-        // placeholder here produces whitespace or duplicated summary rows; replacing those rows with
-        // finalized content is a prefix rewrite and forces a destructive history reset mid-stream.
-        lines = []
-      } else if let cached = historyRenderCache[entry.id], cached.entry == rendered,
-        cached.width == size.width, cached.rawOutputMode == model.rawOutputMode,
-        cached.syntaxTheme == model.syntaxTheme,
-        cached.prependSeparator == prependSeparator
-      {
-        lines = cached.lines
-      } else {
-        var renderedLines = renderer.terminalHistoryLines(
-          for: rendered, width: size.width, sourceContinuation: false)
-        if !renderedLines.isEmpty, prependSeparator {
-          renderedLines.insert(Line(""), at: 0)
-        }
-        lines = renderedLines
-        historyRenderCache[entry.id] = CachedHistoryBlock(
-          entry: rendered,
-          width: size.width,
-          rawOutputMode: model.rawOutputMode,
-          syntaxTheme: model.syntaxTheme,
-          prependSeparator: prependSeparator,
-          lines: renderedLines)
-      }
-      if !lines.isEmpty {
-        hasRows = true
-        lastWasUser = currentIsUser
-      }
-      blocks.append(
-        InlineDocumentBlock(
-          id: entry.id, text: Text(lines), wrap: wrap, isComplete: complete))
+    let prepared = preparedHistoryTail(size: size, renderer: renderer)
+    let indexedBlocks = indexedHistoryBlocks(from: prepared)
+    let replayBlocks = replayBlocks(from: indexedBlocks, size: size)
+    if historyRenderCache.count > replayBlocks.count {
+      let retainedIDs = Set(replayBlocks.map(\.id))
+      historyRenderCache = historyRenderCache.filter { retainedIDs.contains($0.key) }
     }
-    if historyRenderCache.count > model.entries.count {
-      let activeIDs = Set(model.entries.map(\.id))
-      historyRenderCache = historyRenderCache.filter { activeIDs.contains($0.key) }
-    }
-    let replayBlocks = historyReplayBlocks(from: blocks, size: size)
+
     inlineDocumentRevision &+= 1
     let document = InlineDocument(
       id: model.sessionID, revision: inlineDocumentRevision, blocks: replayBlocks)
@@ -198,62 +167,185 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       rawOutputMode: model.rawOutputMode,
       syntaxTheme: model.syntaxTheme,
       document: document)
+    lastKnownTerminalWidth = size.width
     return document
   }
 
-  private func historyReplayBlocks(
-    from blocks: [InlineDocumentBlock<String>], size: Size
-  ) -> [InlineDocumentBlock<String>] {
-    guard !blocks.isEmpty else {
+  private func preparedHistoryTail(
+    size: Size, renderer: CodexScreen
+  ) -> [PreparedHistoryBlock] {
+    guard !model.entries.isEmpty else {
       historyReplayWindow = nil
       return []
     }
 
-    let existingIsValid =
-      historyReplayWindow.map { window in
-        window.sessionID == model.sessionID && window.width == size.width
-          && window.rawOutputMode == model.rawOutputMode && window.syntaxTheme == model.syntaxTheme
-          && blocks.indices.contains(window.startIndex)
-          && blocks[window.startIndex].id == window.startBlockID
-      } ?? false
-
-    if !existingIsValid {
-      var remaining = historyReplayRowLimit
-      var startIndex = blocks.startIndex
-      var startLineOffset = 0
-      for index in blocks.indices.reversed() {
-        let lineCount = blocks[index].text.lines.count
-        if lineCount >= remaining {
-          startIndex = index
-          startLineOffset = lineCount - remaining
-          remaining = 0
-          break
-        }
-        remaining -= lineCount
-        startIndex = index
-        if remaining == 0 { break }
+    if let window = historyReplayWindow,
+      window.sessionID == model.sessionID, window.width == size.width,
+      window.rawOutputMode == model.rawOutputMode, window.syntaxTheme == model.syntaxTheme,
+      model.entries.indices.contains(window.startIndex),
+      model.entries[window.startIndex].id == window.startBlockID
+    {
+      return model.entries.indices[window.startIndex...].map {
+        preparedHistoryBlock(at: $0, size: size, renderer: renderer)
       }
-      historyReplayWindow = HistoryReplayWindow(
-        sessionID: model.sessionID,
-        width: size.width,
-        rawOutputMode: model.rawOutputMode,
-        syntaxTheme: model.syntaxTheme,
-        startIndex: startIndex,
-        startBlockID: blocks[startIndex].id,
-        startLineOffset: startLineOffset)
     }
 
-    guard let window = historyReplayWindow else { return blocks }
-    var result = Array(blocks[window.startIndex...])
-    if window.startLineOffset > 0, !result.isEmpty {
-      result[0].text.lines = Array(result[0].text.lines.dropFirst(window.startLineOffset))
+    var reversed: [PreparedHistoryBlock] = []
+    var renderedRows = 0
+    var laterIsUser: Bool?
+    for index in model.entries.indices.reversed() {
+      let block = preparedHistoryBlock(at: index, size: size, renderer: renderer)
+      reversed.append(block)
+      guard !block.lines.isEmpty else { continue }
+      if let laterIsUser, !block.isUser, !laterIsUser { renderedRows += 1 }
+      renderedRows += block.lines.count
+      laterIsUser = block.isUser
+      if renderedRows >= historyReplayRowLimit { break }
+    }
+    return reversed.reversed()
+  }
+
+  private func preparedHistoryBlock(
+    at index: Int, size: Size, renderer: CodexScreen, cacheResult: Bool = true
+  ) -> PreparedHistoryBlock {
+    let entry = model.entries[index]
+    var rendered = entry
+    var omitsHistory = false
+    switch entry.content {
+    case .assistant(let text, let streaming):
+      let source = streaming ? entry.streamingMarkdown?.stableSource ?? "" : text
+      rendered.content = .assistant(source, streaming: false)
+      rendered.streamingMarkdown = nil
+      omitsHistory = streaming && source.isEmpty
+    case .reasoning(let summary, let body, let streaming):
+      let source = streaming ? entry.streamingMarkdown?.stableSource ?? "" : (body ?? summary)
+      rendered.content = .reasoning(summary: summary, body: source, streaming: false)
+      rendered.streamingMarkdown = nil
+      omitsHistory = streaming && source.isEmpty
+    case .tool(let tool) where tool.status == .running:
+      omitsHistory = true
+    default:
+      break
+    }
+
+    let lines: [Line]
+    if omitsHistory {
+      // Mutable content without stable source belongs only to the retained viewport.
+      lines = []
+    } else if let cached = historyRenderCache[entry.id], cached.entry == rendered,
+      cached.width == size.width, cached.rawOutputMode == model.rawOutputMode,
+      cached.syntaxTheme == model.syntaxTheme
+    {
+      lines = cached.lines
+    } else {
+      lines = renderer.terminalHistoryLines(
+        for: rendered, width: size.width, sourceContinuation: false)
+      if cacheResult {
+        historyRenderCache[entry.id] = CachedHistoryBlock(
+          entry: rendered, width: size.width, rawOutputMode: model.rawOutputMode,
+          syntaxTheme: model.syntaxTheme, lines: lines)
+      }
+    }
+
+    let isUser: Bool = if case .user = entry.content { true } else { false }
+    return PreparedHistoryBlock(
+      sourceIndex: index, id: entry.id, lines: lines,
+      isComplete: historyEntryIsComplete(entry), isUser: isUser)
+  }
+
+  private func indexedHistoryBlocks(
+    from prepared: [PreparedHistoryBlock]
+  ) -> [IndexedHistoryBlock] {
+    let wrap: WrapMode = model.rawOutputMode ? .character : .word
+    var result: [IndexedHistoryBlock] = []
+    result.reserveCapacity(prepared.count)
+    var hasRows = false
+    var lastWasUser = false
+    for preparedBlock in prepared {
+      var lines = preparedBlock.lines
+      if !lines.isEmpty, hasRows, !lastWasUser, !preparedBlock.isUser {
+        lines.insert(Line(""), at: 0)
+      }
+      if !lines.isEmpty {
+        hasRows = true
+        lastWasUser = preparedBlock.isUser
+      }
+      result.append(
+        IndexedHistoryBlock(
+          sourceIndex: preparedBlock.sourceIndex,
+          block: InlineDocumentBlock(
+            id: preparedBlock.id, text: Text(lines), wrap: wrap,
+            isComplete: preparedBlock.isComplete)))
     }
     return result
+  }
+
+  private func replayBlocks(
+    from indexedBlocks: [IndexedHistoryBlock], size: Size
+  ) -> [InlineDocumentBlock<String>] {
+    guard !indexedBlocks.isEmpty else {
+      historyReplayWindow = nil
+      return []
+    }
+
+    if let window = historyReplayWindow,
+      window.sessionID == model.sessionID, window.width == size.width,
+      window.rawOutputMode == model.rawOutputMode, window.syntaxTheme == model.syntaxTheme,
+      indexedBlocks.first?.sourceIndex == window.startIndex,
+      indexedBlocks.first?.block.id == window.startBlockID
+    {
+      var result = indexedBlocks.map(\.block)
+      if window.startLineOffset > 0 {
+        result[0].text.lines = Array(result[0].text.lines.dropFirst(window.startLineOffset))
+      }
+      let rowCount = result.reduce(0) { $0 + $1.text.lines.count }
+      if rowCount <= historyReplayReanchorRowLimit { return result }
+      historyReplayWindow = nil
+      return replayBlocks(from: indexedBlocks, size: size)
+    }
+
+    let totalRows = indexedBlocks.reduce(0) { $0 + $1.block.text.lines.count }
+    var rowsToDrop = max(0, totalRows - historyReplayRowLimit)
+    var retained: [IndexedHistoryBlock] = []
+    var firstLineOffset = 0
+    for indexed in indexedBlocks {
+      let lineCount = indexed.block.text.lines.count
+      if rowsToDrop >= lineCount, rowsToDrop > 0 {
+        rowsToDrop -= lineCount
+        continue
+      }
+      var retainedBlock = indexed
+      if rowsToDrop > 0 {
+        firstLineOffset = rowsToDrop
+        retainedBlock.block.text.lines = Array(
+          retainedBlock.block.text.lines.dropFirst(rowsToDrop))
+        rowsToDrop = 0
+      }
+      retained.append(retainedBlock)
+    }
+
+    guard let first = retained.first else {
+      historyReplayWindow = nil
+      return []
+    }
+    historyReplayWindow = HistoryReplayWindow(
+      sessionID: model.sessionID, width: size.width,
+      rawOutputMode: model.rawOutputMode, syntaxTheme: model.syntaxTheme,
+      startIndex: first.sourceIndex, startBlockID: first.block.id,
+      startLineOffset: firstLineOffset)
+    return retained.map(\.block)
   }
 
   public func terminalHistoryDidReset() {
     historyReplayWindow = nil
     cachedInlineDocument = nil
+  }
+
+  internal var historyRenderCacheEntryCount: Int { historyRenderCache.count }
+  internal var resizeReflowDeadlineForTesting: ContinuousClock.Instant? { resizeReflowDeadline }
+
+  internal func makeResizeReflowDueForTesting() {
+    if resizeReflowDeadline != nil { resizeReflowDeadline = resizeReflowClock.now }
   }
 
   private func historyEntryIsComplete(_ entry: TranscriptEntry) -> Bool {
@@ -272,8 +364,9 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   ) -> CodexTranscriptPager {
     var pager = CodexTranscriptPager(
       backtrackCandidates: backtrackCandidates, selectedBacktrackIndex: selectedBacktrackIndex)
+    pager.sourceEntries = model.entries
     guard model.entries.allSatisfy(historyEntryIsComplete),
-      let width = cachedInlineDocument?.width
+      let width = cachedInlineDocument?.width ?? lastKnownTerminalWidth
     else { return pager }
 
     let highlightedID: String? = pager.highlightedUserFromEnd.flatMap { fromEnd in
@@ -281,30 +374,40 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       let index = users.count - 1 - fromEnd
       return users.indices.contains(index) ? users[index].id : nil
     }
+    let size = Size(width: width, height: 1)
+    let renderer = CodexScreen(snapshot: model.snapshot)
+    let prepared = model.entries.indices.map {
+      preparedHistoryBlock(at: $0, size: size, renderer: renderer, cacheResult: false)
+    }
+    let blocks = indexedHistoryBlocks(from: prepared).map(\.block)
     var lines: [Line] = []
-    lines.reserveCapacity(historyRenderCache.values.reduce(0) { $0 + $1.lines.count })
-    for entry in model.entries {
-      guard let cached = historyRenderCache[entry.id], cached.width == Int(width) else {
-        return pager
-      }
-      if entry.id == highlightedID {
+    lines.reserveCapacity(blocks.reduce(0) { $0 + $1.text.lines.count })
+    for block in blocks {
+      if block.id == highlightedID {
         lines.append(
-          contentsOf: cached.lines.map { line in
+          contentsOf: block.text.lines.map { line in
             var highlighted = line
             highlighted.style = highlighted.style.patching(.init(modifiers: [.reversed]))
             return highlighted
           })
       } else {
-        lines.append(contentsOf: cached.lines)
+        lines.append(contentsOf: block.text.lines)
       }
     }
     pager.cachedTranscriptLines = lines
     pager.cachedWidth = width
-    pager.sourceEntries = model.entries
     return pager
   }
 
   public func update(_ event: TerminalEvent) async -> ApplicationUpdate {
+    if case .resize(let size) = event,
+      resizeReflowDeadline != nil || lastKnownTerminalWidth != size.width
+    {
+      resizeReflowDeadline = resizeReflowClock.now.advanced(by: resizeReflowDebounce)
+      pendingResizeWidth = size.width
+      historyReplayWindow = nil
+      cachedInlineDocument = nil
+    }
     if model.overlay != nil { return await updateOverlay(event) }
     if let popupUpdate = await updateSlashCommandPopup(event) { return popupUpdate }
 
@@ -981,16 +1084,7 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   }
 
   private func updateOverlay(_ event: TerminalEvent) async -> ApplicationUpdate {
-    if case .transcript(let pager) = model.overlay, case .resize(let size) = event {
-      model.overlay = nil
-      _ = inlineDocument(size: size)
-      var refreshed = makeTranscriptPager(
-        backtrackCandidates: pager.backtrackCandidates,
-        selectedBacktrackIndex: pager.selectedBacktrackIndex)
-      refreshed.scrollFromBottom = pager.scrollFromBottom
-      model.overlay = .transcript(refreshed)
-      return .redraw
-    }
+    if case .resize = event { return .redraw }
     if case .keymap(var picker) = model.overlay, case .paste(let text) = event {
       picker.query.append(contentsOf: text)
       picker.selectedIndex = 0

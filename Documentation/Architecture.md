@@ -16,8 +16,10 @@ The default experience is inline. Ownership is deliberately split at the source/
 
 - `CodexTUI` decides what is semantically committed, retains canonical source, gates mutable Markdown
   tables and incomplete lines, and requests reset/replay after rewinds, provider rewrites, display-mode
-  changes, or session replacement. Running tools and streams without committed source emit no placeholder
-  history rows; they remain solely in the mutable viewport until their final source can append cleanly.
+  changes, or session replacement. It owns the 75 ms resize quiet period and formats backward from the
+  transcript tail until the 1,000-row replay budget is full. Running tools and streams without committed
+  source emit no placeholder history rows; they remain solely in the mutable viewport until their final
+  source can append cleanly.
 - `Ratatui` decides how committed rendered rows reach native scrollback for the detected terminal host,
   owns viewport movement and buffer invalidation, and notifies the application after clear, resize, or
   suspend/resume resets.
@@ -57,8 +59,10 @@ Ctrl-P/Ctrl-N. `/status` reads live driver context usage rather than a stale sna
 ### Remaining deliberate gaps
 
 - The transcript pager is feature-complete inside the retained inline surface, but the current 22-row cap
-  means it is not yet a full physical-terminal alternate-screen pager on taller terminals. Switching
-  viewport modes safely is framework lifecycle work, not a Codex-only ANSI escape.
+  means it is not yet a full physical-terminal alternate-screen pager on taller terminals. Its full-source,
+  width-specific cache is also prepared eagerly, so first open remains linear for pathological sessions even
+  though later frames are viewport-bound. Switching viewport modes safely is framework lifecycle work; lazy
+  cell measurement and indexing remain Codex presentation work.
 - Escape dismissal for an active mention currently follows the established Swift behavior of reopening
   after cursor re-entry. Upstream retains a dismissed-token sentinel; adopting that policy requires an
   explicit UX decision because the prior Swift requirement requested re-entry reopening.

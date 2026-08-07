@@ -1898,9 +1898,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       let contentArea = Rect(
         x: area.x, y: area.y + 1, width: area.width, height: area.height - 2)
       let percent: Int
-      if !snapshot.rawOutputMode, pager.cachedWidth == contentArea.width,
-        let cached = pager.cachedTranscriptLines
-      {
+      if !snapshot.rawOutputMode, let cached = pager.cachedTranscriptLines {
         let viewport = ScrollViewport(
           totalRows: cached.count,
           viewportRows: contentArea.height,

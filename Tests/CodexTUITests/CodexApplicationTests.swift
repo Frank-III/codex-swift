@@ -818,12 +818,94 @@ import Testing
         "new live row"))
   }
 
-  @Test func transcriptPagerReusesCommittedRenderCacheForLargeIdleSessions() async {
+  @Test func longLivedReplayWindowReanchorsBeforeWarmWorkCanGrowUnbounded() {
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(
+        entries: CodexLargeSessionFixture.makeEntries(turns: 100), showHeader: false))
+    let application = CodexApplication(model: model, driver: Driver(), systemServices: .disabled)
+    let size = Size(width: 80, height: 24)
+    let initial = application.inlineDocument(size: size)!
+    var runtime = InlineDocumentRuntime<String>()
+    _ = runtime.reconcile(initial, width: size.width)
+
+    model.entries.append(
+      contentsOf: (0..<600).map {
+        TranscriptEntry(id: "reanchor-\($0)", content: .notice("new row \($0)"))
+      })
+    let reanchored = application.inlineDocument(size: size)!
+    let insertions = runtime.reconcile(reanchored, width: size.width)
+
+    #expect(reanchored.blocks.flatMap(\.text.lines).count == 1_000)
+    #expect(reanchored.blocks.first?.id != initial.blocks.first?.id)
+    #expect(insertions.first?.resetsScrollback == true)
+    #expect(application.historyRenderCacheEntryCount <= reanchored.blocks.count)
+  }
+
+  @Test func largeResumeFormatsOnlyTheRowCappedTranscriptTail() {
+    let entries = CodexLargeSessionFixture.makeEntries(turns: 1_000)
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(entries: entries, showHeader: false))
+    let application = CodexApplication(model: model, driver: Driver(), systemServices: .disabled)
+
+    let initial = application.inlineDocument(size: Size(width: 80, height: 24))
+    #expect(initial?.blocks.flatMap(\.text.lines).count == 1_000)
+    #expect(application.historyRenderCacheEntryCount < entries.count / 10)
+
+    application.terminalHistoryDidReset()
+    let reflowed = application.inlineDocument(size: Size(width: 52, height: 24))
+    #expect(reflowed?.blocks.flatMap(\.text.lines).count == 1_000)
+    #expect(application.historyRenderCacheEntryCount < entries.count / 10)
+  }
+
+  @Test func widthResizeDebouncesSourceBackedHistoryReflow() async {
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(
+        entries: CodexLargeSessionFixture.makeEntries(turns: 100), showHeader: false))
+    let application = CodexApplication(model: model, driver: Driver(), systemServices: .disabled)
+    #expect(application.inlineDocument(size: Size(width: 80, height: 24)) != nil)
+
+    _ = await application.update(.resize(Size(width: 60, height: 24)))
+    let firstDeadline = application.resizeReflowDeadlineForTesting
+    #expect(application.inlineDocument(size: Size(width: 60, height: 24)) == nil)
+    #expect(application.needsPeriodicRedraw)
+
+    _ = await application.update(.resize(Size(width: 52, height: 24)))
+    let secondDeadline = application.resizeReflowDeadlineForTesting
+    #expect(firstDeadline != nil)
+    #expect(secondDeadline != nil)
+    #expect(secondDeadline! > firstDeadline!)
+    #expect(application.inlineDocument(size: Size(width: 52, height: 24)) == nil)
+
+    application.makeResizeReflowDueForTesting()
+    #expect(application.inlineDocument(size: Size(width: 52, height: 24)) != nil)
+    #expect(!application.needsPeriodicRedraw)
+  }
+
+  @Test func resizeDeadlineClearsWhileANonTranscriptOverlayRemainsOpen() async {
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(
+        entries: CodexLargeSessionFixture.makeEntries(turns: 20), showHeader: false))
+    let application = CodexApplication(model: model, driver: Driver(), systemServices: .disabled)
+    #expect(application.inlineDocument(size: Size(width: 80, height: 24)) != nil)
+    model.overlay = .shortcuts
+
+    _ = await application.update(.resize(Size(width: 52, height: 24)))
+    application.makeResizeReflowDueForTesting()
+    #expect(application.inlineDocument(size: Size(width: 52, height: 24)) == nil)
+    #expect(model.overlay == .shortcuts)
+    #expect(!application.needsPeriodicRedraw)
+
+    model.overlay = nil
+    #expect(application.inlineDocument(size: Size(width: 52, height: 24)) != nil)
+  }
+
+  @Test func transcriptPagerCachesFullSourceWithoutExpandingHistoryCache() async {
     let model = CodexSessionModel(
       snapshot: CodexSnapshot(
         entries: CodexLargeSessionFixture.makeEntries(turns: 100), showHeader: false))
     let application = CodexApplication(model: model, driver: Driver(), systemServices: .disabled)
     _ = application.inlineDocument(size: Size(width: 80, height: 24))
+    let tailCacheCount = application.historyRenderCacheEntryCount
 
     _ = await application.update(.key(KeyEvent(.character("t"), modifiers: [.control])))
     guard case .transcript(let pager) = model.overlay else {
@@ -832,15 +914,32 @@ import Testing
     }
     #expect(pager.cachedWidth == 80)
     #expect(pager.cachedTranscriptLines?.isEmpty == false)
+    #expect(pager.sourceEntries?.count == model.entries.count)
+    #expect(application.historyRenderCacheEntryCount == tailCacheCount)
     #expect(application.body.snapshot.entries.isEmpty)
 
     _ = await application.update(.resize(Size(width: 64, height: 24)))
+    guard case .transcript(let pendingPager) = model.overlay else {
+      Issue.record("Expected transcript pager during resize debounce")
+      return
+    }
+    #expect(pendingPager.cachedWidth == 80)
+    #expect(application.needsPeriodicRedraw)
+
+    application.makeResizeReflowDueForTesting()
+    #expect(application.inlineDocument(size: Size(width: 64, height: 24)) == nil)
     guard case .transcript(let resizedPager) = model.overlay else {
       Issue.record("Expected transcript pager after resize")
       return
     }
-    #expect(resizedPager.cachedWidth == 64)
+    #expect(resizedPager.cachedWidth == 80)
     #expect(resizedPager.cachedTranscriptLines?.isEmpty == false)
+    #expect(resizedPager.sourceEntries?.count == model.entries.count)
+    #expect(application.historyRenderCacheEntryCount == tailCacheCount)
+    #expect(!application.needsPeriodicRedraw)
+
+    model.overlay = nil
+    #expect(application.inlineDocument(size: Size(width: 64, height: 24)) != nil)
   }
 
   @Test func transcriptPagerMovementSaturatesAfterJumpingToTop() {

@@ -78,7 +78,9 @@ struct CodexBenchmarkMain {
     let reflowMilliseconds = milliseconds(since: reflowStart)
     let rssAfterReflow = residentBytes()
 
+    let pagerPreparationStart = now()
     _ = await application.update(.key(KeyEvent(.character("t"), modifiers: [.control])))
+    let pagerPreparationMilliseconds = milliseconds(since: pagerPreparationStart)
     let pagerCache: (rows: Int, width: Int?) =
       if case .transcript(let pager) =
         application.model.overlay
@@ -125,6 +127,7 @@ struct CodexBenchmarkMain {
     print(
       "  pager cache:    \(pagerCache.rows) rows at width \(pagerCacheWidth)"
     )
+    print("  pager prepare:  \(formatMilliseconds(pagerPreparationMilliseconds))")
     print("  pager open:     \(formatMilliseconds(pagerOpenMilliseconds))")
     print("  pager scroll:   \(formatMilliseconds(pagerScrollMilliseconds))")
     print("  RSS launch:     \(formatBytes(rssAtLaunch))")
