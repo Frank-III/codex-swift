@@ -51,21 +51,19 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     guard snapshot.selectedImageAttachmentIndex == nil,
       composer.width > 3, composer.height > 0
     else { return nil }
-    let textLayout = composerTextLayout(width: Int(composer.width))
+    let textLayout = composerTextLayout(width: composer.width)
     let imageCount = min(3, snapshot.imageAttachments.count)
     let imageOffset = imageCount + (imageCount > 0 ? 1 : 0)
     let footerHeight = snapshot.overlay == nil && slashSuggestions().isEmpty ? 1 : 0
-    let panelHeight = max(1, Int(composer.height) - footerHeight)
+    let panelHeight = max(1, composer.height - footerHeight)
     let availableTextRows = max(1, panelHeight - 2 - imageOffset)
     let firstVisibleLine = max(0, textLayout.cursorLine - availableTextRows + 1)
     return Position(
-      x: UInt16(
-        clamping: min(
-          Int(composer.right) - 2, Int(composer.x) + 2 + textLayout.cursorColumn)),
-      y: UInt16(
-        clamping: min(
-          Int(composer.bottom) - 1,
-          Int(composer.y) + 1 + imageOffset + textLayout.cursorLine - firstVisibleLine))
+      x: (min(
+        composer.right - 2, composer.x + 2 + textLayout.cursorColumn)),
+      y: (min(
+        composer.bottom - 1,
+        composer.y + 1 + imageOffset + textLayout.cursorLine - firstVisibleLine))
     )
   }
 
@@ -144,27 +142,26 @@ public struct CodexScreen: Widget, Hashable, Sendable {
   private func singleLineFieldCursor(
     _ field: TextFieldState, prefix: String, row: Int, in area: Rect
   ) -> Position? {
-    guard area.width > 0, row >= 0, row < Int(area.height) else { return nil }
+    guard area.width > 0, row >= 0, row < area.height else { return nil }
     let characters = Array(field.text)
     let column =
       TerminalWidth.of(prefix)
       + TerminalWidth.of(String(characters.prefix(min(field.cursor, characters.count))))
     return Position(
-      x: UInt16(clamping: min(Int(area.right) - 1, Int(area.x) + column)),
-      y: UInt16(clamping: Int(area.y) + row))
+      x: (min(area.right - 1, area.x + column)),
+      y: (area.y + row))
   }
 
   private func wrappedFieldCursor(
     _ field: TextFieldState, prefix: String, row: Int, in area: Rect
   ) -> Position? {
-    guard area.width > 0, row >= 0, row < Int(area.height) else { return nil }
+    guard area.width > 0, row >= 0, row < area.height else { return nil }
     let text = prefix + field.text
     let cursor = prefix.count + min(field.cursor, field.text.count)
-    let layout = textCursorLayout(text: text, cursor: cursor, width: Int(area.width))
+    let layout = textCursorLayout(text: text, cursor: cursor, width: area.width)
     return Position(
-      x: UInt16(clamping: Int(area.x) + min(Int(area.width) - 1, layout.cursorColumn)),
-      y: UInt16(
-        clamping: min(Int(area.bottom) - 1, Int(area.y) + row + layout.cursorLine)))
+      x: (area.x + min(area.width - 1, layout.cursorColumn)),
+      y: (min(area.bottom - 1, area.y + row + layout.cursorLine)))
   }
 
   private func textCursorLayout(text: String, cursor: Int, width: Int) -> ComposerTextLayout {
@@ -241,21 +238,21 @@ public struct CodexScreen: Widget, Hashable, Sendable {
   }
 
   private func layout(in area: Rect) -> ScreenLayout {
-    let totalHeight = Int(area.height)
-    let transcriptDesired = transcriptDesiredHeight(width: Int(area.width))
+    let totalHeight = area.height
+    let transcriptDesired = transcriptDesiredHeight(width: area.width)
     let suggestions = slashSuggestions()
-    let suggestionLines = slashSuggestionLines(width: Int(area.width))
+    let suggestionLines = slashSuggestionLines(width: area.width)
     let imageCount = min(3, snapshot.imageAttachments.count)
     let imageHeight = imageCount + (imageCount > 0 ? 1 : 0)
-    let panelHeight = 2 + imageHeight + composerTextLayout(width: Int(area.width)).lines.count
+    let panelHeight = 2 + imageHeight + composerTextLayout(width: area.width).lines.count
     let composerDesiredHeight = panelHeight + (suggestions.isEmpty ? 1 : 0)
-    let statusDesiredHeight = statusLineCount(width: Int(area.width))
+    let statusDesiredHeight = statusLineCount(width: area.width)
 
     if let overlay = snapshot.overlay {
       let keepsComposer = overlayPlacement(for: overlay) == .composerPopup
       let composerHeight = keepsComposer ? min(panelHeight, totalHeight) : 0
       let overlayHeight = min(
-        desiredHeight(for: overlay, width: Int(area.width)),
+        desiredHeight(for: overlay, width: area.width),
         max(0, totalHeight - composerHeight))
       let bottomHeight = composerHeight + overlayHeight
       let history = historyAllocation(
@@ -264,11 +261,11 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       let regions = Layout(
         .vertical,
         constraints: [
-          .length(UInt16(clamping: history.headerHeight)),
-          .length(UInt16(clamping: history.separatorHeight)),
+          .length(history.headerHeight),
+          .length(history.separatorHeight),
           .flex(1),
-          .length(UInt16(clamping: composerHeight)),
-          .length(UInt16(clamping: overlayHeight)),
+          .length(composerHeight),
+          .length(overlayHeight),
         ]
       ).split(area)
       let empty = Rect(x: regions[3].x, y: regions[3].y, width: regions[3].width, height: 0)
@@ -290,12 +287,12 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let regions = Layout(
       .vertical,
       constraints: [
-        .length(UInt16(clamping: history.headerHeight)),
-        .length(UInt16(clamping: history.separatorHeight)),
+        .length(history.headerHeight),
+        .length(history.separatorHeight),
         .flex(1),
-        .length(UInt16(clamping: statusHeight)),
-        .length(UInt16(clamping: composerHeight)),
-        .length(UInt16(clamping: suggestionHeight)),
+        .length(statusHeight),
+        .length(composerHeight),
+        .length(suggestionHeight),
       ]
     ).split(area)
     return ScreenLayout(
@@ -327,7 +324,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
 
   private func headerRect(in row: Rect) -> Rect {
     Rect(
-      x: row.x, y: row.y, width: min(row.width, UInt16(clamping: headerDesiredWidth())),
+      x: row.x, y: row.y, width: min(row.width, (headerDesiredWidth())),
       height: min(7, row.height))
   }
 
@@ -400,7 +397,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     return Paragraph(
       Text(lines), wrap: snapshot.rawOutputMode ? .character : .word,
       trimLeadingWhitespace: false
-    ).lineCount(width: UInt16(clamping: width))
+    ).lineCount(width: width)
   }
 
   private func overlayPlacement(for overlay: CodexOverlay) -> OverlayPlacement {
@@ -483,7 +480,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     environment: RenderEnvironment
   ) {
     guard !area.isEmpty, area.width >= 4 else { return }
-    let innerWidth = max(0, Int(area.width) - 4)
+    let innerWidth = max(0, area.width - 4)
     let tier = snapshot.serviceTier.map { "   \($0)" } ?? ""
     let modelValue = fit(
       "\(snapshot.model) \(snapshot.reasoningEffort)\(tier)   /model to change",
@@ -493,7 +490,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let rows = [
       Line {
         Span("╭")
-        Span(String(repeating: "─", count: max(0, Int(area.width) - 2)))
+        Span(String(repeating: "─", count: max(0, area.width - 2)))
         Span("╮")
       },
       Line {
@@ -528,11 +525,11 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       },
       Line {
         Span("╰")
-        Span(String(repeating: "─", count: max(0, Int(area.width) - 2)))
+        Span(String(repeating: "─", count: max(0, area.width - 2)))
         Span("╯")
       },
     ]
-    Text(Array(rows.dropFirst(lineOffset).prefix(Int(area.height))))
+    Text(Array(rows.dropFirst(lineOffset).prefix(area.height)))
       .render(in: area, into: &buffer, environment: environment)
   }
 
@@ -540,14 +537,14 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     in area: Rect, into buffer: inout Buffer, environment: RenderEnvironment
   ) {
     guard !area.isEmpty else { return }
-    let lines = renderedTranscriptLines(width: Int(area.width))
+    let lines = renderedTranscriptLines(width: area.width)
     guard !lines.isEmpty else { return }
     let paragraph = Paragraph(
       Text(lines), wrap: snapshot.rawOutputMode ? .character : .word,
       trimLeadingWhitespace: false)
     let total = paragraph.lineCount(width: area.width)
     var visible = paragraph
-    visible.scroll = UInt16(clamping: max(0, total - Int(area.height)))
+    visible.scroll = (max(0, total - area.height))
     visible.render(in: area, into: &buffer, environment: environment)
   }
 
@@ -1365,7 +1362,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     in area: Rect, into buffer: inout Buffer, environment: RenderEnvironment
   ) {
     guard !area.isEmpty else { return }
-    Text(Array(slashSuggestionLines(width: Int(area.width)).prefix(Int(area.height))))
+    Text(Array(slashSuggestionLines(width: area.width).prefix(area.height)))
       .render(in: area, into: &buffer, environment: environment)
   }
 
@@ -1393,7 +1390,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         })
     }
     for message in snapshot.queuedMessages {
-      let preview = queuePreviewLines(message, width: Int(area.width))
+      let preview = queuePreviewLines(message, width: area.width)
       rows += Array(preview.prefix(3))
       if preview.count > 3 {
         rows.append(Line("    …", style: .init(modifiers: [.dim, .italic])))
@@ -1485,15 +1482,15 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     showsFooter: Bool = true
   ) {
     guard !area.isEmpty else { return }
-    let textLayout = composerTextLayout(width: Int(area.width))
+    let textLayout = composerTextLayout(width: area.width)
     let attachments = visibleImageAttachments()
     let imageHeight = attachments.count + (attachments.isEmpty ? 0 : 1)
     let footerHeight = showsFooter && slashSuggestions().isEmpty ? 1 : 0
     let desiredPanelHeight = 2 + imageHeight + textLayout.lines.count
     let panelHeight = min(
-      desiredPanelHeight, max(1, Int(area.height) - footerHeight))
+      desiredPanelHeight, max(1, area.height - footerHeight))
     let panel = Rect(
-      x: area.x, y: area.y, width: area.width, height: UInt16(panelHeight))
+      x: area.x, y: area.y, width: area.width, height: panelHeight)
     let panelStyle = Style(background: .rgb(63, 67, 74))
     buffer.fill(panel, with: Cell(symbol: " ", style: panelStyle))
 
@@ -1504,7 +1501,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         isSelected
         ? panelStyle.patching(.init(modifiers: [.reversed])) : panelStyle
       let rowArea = Rect(
-        x: panel.x, y: UInt16(clamping: Int(panel.y) + 1 + row), width: panel.width,
+        x: panel.x, y: (panel.y + 1 + row), width: panel.width,
         height: 1)
       if isSelected { buffer.fill(rowArea, with: Cell(symbol: " ", style: rowStyle)) }
       Line(style: rowStyle) {
@@ -1514,7 +1511,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       }.render(in: rowArea, into: &buffer, environment: environment)
     }
 
-    let textStartY = Int(panel.y) + 1 + imageHeight
+    let textStartY = panel.y + 1 + imageHeight
     let availableTextRows = max(0, panelHeight - 2 - imageHeight)
     let firstVisibleLine = max(0, textLayout.cursorLine - max(1, availableTextRows) + 1)
     let visibleLines = textLayout.lines.dropFirst(firstVisibleLine).prefix(availableTextRows)
@@ -1531,11 +1528,11 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       }
       .render(
         in: Rect(
-          x: area.x, y: UInt16(clamping: textStartY + row), width: area.width,
+          x: area.x, y: (textStartY + row), width: area.width,
           height: 1),
         into: &buffer, environment: environment)
     }
-    guard footerHeight > 0, area.height > UInt16(panelHeight) else { return }
+    guard footerHeight > 0, area.height > panelHeight else { return }
     let footerY = area.bottom - 1
     let left =
       snapshot.mode == .side
@@ -1547,7 +1544,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       : snapshot.rightStatus ?? ""
     let vimIndicator = snapshot.vimEnabled ? "Vim: \(snapshot.vimMode.rawValue)" : ""
     let right = [baseRight, vimIndicator].filter { !$0.isEmpty }.joined(separator: " | ")
-    let gap = max(1, Int(area.width) - TerminalWidth.of(left) - TerminalWidth.of(right) - 2)
+    let gap = max(1, area.width - TerminalWidth.of(left) - TerminalWidth.of(right) - 2)
     Line {
       Span("  \(snapshot.model)", style: .init(foreground: .yellow))
       Span(" \(snapshot.reasoningEffort)")
@@ -1651,7 +1648,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       renderRequestUserInput(request, in: area, into: &buffer, environment: environment)
     case .models(let picker):
       let models = picker.filteredModels
-      let visibleRows = max(1, Int(area.height) - 6)
+      let visibleRows = max(1, area.height - 6)
       let start = min(
         max(0, picker.selectedIndex - visibleRows / 2),
         max(0, models.count - visibleRows))
@@ -1705,7 +1702,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         let currentSuffix = option.id == snapshot.reasoningEffort ? " (current)" : ""
         return ("\(option.label)\(defaultSuffix)\(currentSuffix)", option.description)
       }
-      rows += selectionMenuRows(items, selectedIndex: picker.selectedIndex, width: Int(area.width))
+      rows += selectionMenuRows(items, selectedIndex: picker.selectedIndex, width: area.width)
       rows += [
         Line(""),
         Line("  Press enter to confirm or esc to go back", style: .init(modifiers: [.dim])),
@@ -1728,7 +1725,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         )
       }
       rows += selectionMenuRows(
-        items, selectedIndex: picker.selectedIndex, width: Int(area.width))
+        items, selectedIndex: picker.selectedIndex, width: area.width)
       rows += [
         Line(""),
         Line("  Press enter to confirm or esc to go back", style: .init(modifiers: [.dim])),
@@ -1739,7 +1736,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       renderThemePicker(picker, in: area, into: &buffer, environment: environment)
     case .keymap(let picker):
       let actions = picker.filteredActions
-      let visibleRows = max(1, Int(area.height) - 6)
+      let visibleRows = max(1, area.height - 6)
       let tabs = CodexKeymapTab.allCases.map { tab in
         let label = tab.label(
           customizedCount: picker.customizedCount, unboundCount: picker.unboundCount)
@@ -1906,7 +1903,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       {
         let viewport = ScrollViewport(
           totalRows: cached.count,
-          viewportRows: Int(contentArea.height),
+          viewportRows: contentArea.height,
           offsetFromEnd: pager.scrollFromBottom)
         Paragraph(
           Text(Array(cached[viewport.visibleRange])), wrap: .none,
@@ -1915,16 +1912,16 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         percent = viewport.progressPercent
       } else {
         let lines = renderedTranscriptLines(
-          width: Int(contentArea.width), highlightedUserFromEnd: pager.highlightedUserFromEnd,
+          width: contentArea.width, highlightedUserFromEnd: pager.highlightedUserFromEnd,
           entries: pager.sourceEntries)
         var paragraph = Paragraph(
           Text(lines), wrap: snapshot.rawOutputMode ? .character : .word,
           trimLeadingWhitespace: false)
         let total = paragraph.lineCount(width: contentArea.width)
-        let maxScroll = max(0, total - Int(contentArea.height))
+        let maxScroll = max(0, total - contentArea.height)
         let distance = min(maxScroll, pager.scrollFromBottom)
         let scroll = maxScroll - distance
-        paragraph.scroll = UInt16(clamping: scroll)
+        paragraph.scroll = scroll
         paragraph.render(in: contentArea, into: &buffer, environment: environment)
         percent =
           maxScroll == 0 ? 100 : Int((Double(scroll) / Double(maxScroll) * 100).rounded())
@@ -1984,7 +1981,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         Line(""),
       ]
       rows += selectionMenuRows(
-        choices, selectedIndex: confirmation.selectedIndex, width: Int(area.width))
+        choices, selectedIndex: confirmation.selectedIndex, width: area.width)
       rows += [
         Line(""),
         Line("  Press enter to confirm or esc to go back", style: .init(modifiers: [.dim])),
@@ -2015,7 +2012,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           ("Review uncommitted changes", "Review the current working tree"),
           ("Review a commit", "Review the most recent commit"),
           ("Custom review instructions", "Type your own review focus"),
-        ], selectedIndex: picker.selectedIndex, width: Int(area.width))
+        ], selectedIndex: picker.selectedIndex, width: area.width)
       rows += [
         Line(""),
         Line("  Press enter to confirm or esc to go back", style: .init(modifiers: [.dim])),
@@ -2066,7 +2063,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         Line(""),
       ]
       for entry in preview.thread.entries {
-        rows += transcriptLines(for: entry.content, width: Int(area.width))
+        rows += transcriptLines(for: entry.content, width: area.width)
         rows.append(Line(""))
       }
       rows.append(
@@ -2075,7 +2072,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           style: .init(modifiers: [.dim])))
       var paragraph = Paragraph(Text(rows), wrap: .word, trimLeadingWhitespace: false)
       let total = paragraph.lineCount(width: area.width)
-      paragraph.scroll = UInt16(clamping: max(0, total - Int(area.height)))
+      paragraph.scroll = (max(0, total - area.height))
       paragraph.render(in: area, into: &buffer, environment: environment)
     case .backgroundTasks(let picker):
       var rows: [Line] = [
@@ -2089,7 +2086,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           ("\($0.label) [\($0.status)]", "\($0.kind) · \($0.id)")
         }
         rows += selectionMenuRows(
-          items, selectedIndex: picker.selectedIndex, width: Int(area.width))
+          items, selectedIndex: picker.selectedIndex, width: area.width)
         if picker.tasks.indices.contains(picker.selectedIndex) {
           let output = picker.tasks[picker.selectedIndex].output
           if !output.isEmpty {
@@ -2118,10 +2115,10 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       } else {
         let items = filtered.map { ($0.name, $0.description) }
         let groups = selectionMenuRowGroups(
-          items, selectedIndex: picker.selectedIndex, width: Int(area.width))
+          items, selectedIndex: picker.selectedIndex, width: area.width)
         let viewport = SelectionViewport.fitting(
           itemHeights: groups.map(\.count), selectedIndex: picker.selectedIndex,
-          capacity: max(1, Int(area.height) - 5))
+          capacity: max(1, area.height - 5))
         rows += viewport.range.flatMap { groups[$0] }
       }
       rows += [
@@ -2145,10 +2142,10 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       } else {
         let groups = selectionMenuRowGroups(
           filtered.map { ($0, "") }, selectedIndex: picker.selectedIndex,
-          width: Int(area.width))
+          width: area.width)
         let viewport = SelectionViewport.fitting(
           itemHeights: groups.map(\.count), selectedIndex: picker.selectedIndex,
-          capacity: max(1, Int(area.height) - 5))
+          capacity: max(1, area.height - 5))
         rows += viewport.range.flatMap { groups[$0] }
       }
       rows += [
@@ -2165,7 +2162,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           style: .init(modifiers: [.dim])),
         Line(""),
       ]
-      let visibleRows = max(1, Int(area.height) - 5)
+      let visibleRows = max(1, area.height - 5)
       let start = min(
         max(0, picker.selectedIndex - visibleRows / 2),
         max(0, picker.candidates.count - visibleRows))
@@ -2194,12 +2191,12 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     environment: RenderEnvironment
   ) {
     let wide = area.width >= 94
-    let listWidth = wide ? max(40, Int(area.width) / 2) : Int(area.width)
+    let listWidth = wide ? max(40, area.width / 2) : area.width
     let listArea = Rect(
-      x: area.x, y: area.y, width: UInt16(clamping: listWidth),
-      height: wide ? area.height : UInt16(clamping: max(0, Int(area.height) - 4)))
+      x: area.x, y: area.y, width: listWidth,
+      height: wide ? area.height : (max(0, area.height - 4)))
     let themes = picker.filteredThemes
-    let visibleCount = max(1, Int(listArea.height) - 6)
+    let visibleCount = max(1, listArea.height - 6)
     let start = min(
       max(0, picker.selectedIndex - visibleCount / 2), max(0, themes.count - visibleCount))
     let end = min(themes.count, start + visibleCount)
@@ -2241,8 +2238,8 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let previewRows: [(Int, Character, String)]
     if wide {
       previewArea = Rect(
-        x: UInt16(clamping: Int(area.x) + listWidth), y: area.y,
-        width: UInt16(clamping: Int(area.width) - listWidth), height: area.height)
+        x: (area.x + listWidth), y: area.y,
+        width: (area.width - listWidth), height: area.height)
       previewRows = [
         (31, " ", "fn summarize(users: &[User]) -> String {"),
         (32, "-", "    let active = users.iter().filter(|u| u.is_active).count();"),
@@ -2255,7 +2252,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       ]
     } else {
       previewArea = Rect(
-        x: area.x, y: UInt16(clamping: Int(area.y) + Int(area.height) - 4),
+        x: area.x, y: (area.y + area.height - 4),
         width: area.width, height: 4)
       previewRows = [
         (12, " ", "fn greet(name: &str) -> String {"),
@@ -2280,7 +2277,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let code = previewRows.map(\.2).joined(separator: "\n")
     let highlighted = Self.syntaxHighlighter.highlightLines(
       code, language: "rust", theme: theme)
-    let topPadding = wide ? max(1, (Int(area.height) - previewRows.count) / 2) : 0
+    let topPadding = wide ? max(1, (area.height - previewRows.count) / 2) : 0
     var rows = Array(repeating: Line(""), count: topPadding)
     for (index, preview) in previewRows.enumerated() {
       let background: Color? =
@@ -2306,7 +2303,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     environment: RenderEnvironment
   ) {
     let sessions = picker.filteredSessions
-    let visibleCount = max(1, Int(area.height) - 7)
+    let visibleCount = max(1, area.height - 7)
     let start = min(
       max(0, picker.selectedIndex - visibleCount / 2), max(0, sessions.count - visibleCount))
     let end = min(sessions.count, start + visibleCount)
@@ -2410,7 +2407,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         ),
       ]
     }
-    rows += selectionMenuRows(choices, selectedIndex: picker.selectedIndex, width: Int(area.width))
+    rows += selectionMenuRows(choices, selectedIndex: picker.selectedIndex, width: area.width)
     rows += [
       Line(""),
       Line("  Press enter to confirm or esc to go back", style: .init(modifiers: [.dim])),

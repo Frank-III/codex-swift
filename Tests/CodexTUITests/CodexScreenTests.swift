@@ -22,9 +22,9 @@ import Testing
 
     let first = try #require(rows.firstIndex { $0.contains("› first line") })
     #expect(rows[first + 1].contains("second line"))
-    #expect(frame.cursorPosition?.y == UInt16(first + 1))
-    #expect(frame.buffer[Position(x: 0, y: UInt16(first))].style.background == .rgb(63, 67, 74))
-    #expect(frame.buffer[Position(x: 47, y: UInt16(first))].style.background == .rgb(63, 67, 74))
+    #expect(frame.cursorPosition?.y == Int(first + 1))
+    #expect(frame.buffer[Position(x: 0, y: first)].style.background == .rgb(63, 67, 74))
+    #expect(frame.buffer[Position(x: 47, y: first)].style.background == .rgb(63, 67, 74))
   }
 
   @Test func cappedViewportAnchorsComposerBelowFlexibleTranscriptSpace() throws {
@@ -389,7 +389,7 @@ import Testing
     #expect(frame.buffer[Position(x: 39, y: 3)].symbol == "│")
     #expect(frame.buffer[Position(x: 39, y: 4)].symbol == "│")
     #expect(
-      (0..<40).map { frame.buffer[Position(x: UInt16($0), y: 4)].symbol }.joined().contains("…"))
+      (0..<40).map { frame.buffer[Position(x: Int($0), y: 4)].symbol }.joined().contains("…"))
   }
 
   @Test func slashPopupRendersBelowComposerWithUpstreamSelectionStyle() throws {
@@ -399,13 +399,13 @@ import Testing
     let frame = try terminal.draw { $0.render(CodexScreen(snapshot: snapshot)) }
     let rows = (0..<14).map { y in
       (0..<80).map { x in
-        frame.buffer[Position(x: UInt16(x), y: UInt16(y))].symbol
+        frame.buffer[Position(x: x, y: y)].symbol
       }.joined()
     }
     let composerRow = try #require(rows.firstIndex { $0.contains("› /") })
     let selectedRow = try #require(rows.firstIndex { $0.contains("/thinking") })
     #expect(composerRow < selectedRow)
-    let selectedCell = frame.buffer[Position(x: 2, y: UInt16(selectedRow))]
+    let selectedCell = frame.buffer[Position(x: 2, y: selectedRow)]
     #expect(selectedCell.style.foreground == .cyan)
     #expect(selectedCell.style.modifiers.contains(.bold))
   }
@@ -418,7 +418,7 @@ import Testing
     let frame = try terminal.draw { $0.render(CodexScreen(snapshot: snapshot)) }
     let rows = (0..<20).map { y in
       (0..<48).map { x in
-        frame.buffer[Position(x: UInt16(x), y: UInt16(y))].symbol
+        frame.buffer[Position(x: x, y: y)].symbol
       }.joined()
     }
     let headerBottom = try #require(rows.firstIndex { $0.contains("╰─") })

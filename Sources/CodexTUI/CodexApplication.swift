@@ -21,7 +21,7 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   private struct CachedInlineDocument {
     var sessionID: String
     var transcriptRevision: UInt64
-    var width: UInt16
+    var width: Int
     var rawOutputMode: Bool
     var syntaxTheme: SyntaxTheme
     var document: InlineDocument<String>
@@ -29,7 +29,7 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
 
   private struct HistoryReplayWindow {
     var sessionID: String
-    var width: UInt16
+    var width: Int
     var rawOutputMode: Bool
     var syntaxTheme: SyntaxTheme
     var startIndex: Int
@@ -98,8 +98,8 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
     return CodexScreen(snapshot: snapshot)
   }
 
-  public func desiredInlineViewportHeight(size: Size) -> UInt16 {
-    UInt16(clamping: min(22, min(Int(size.height), body.desiredHeight(width: Int(size.width)))))
+  public func desiredInlineViewportHeight(size: Size) -> Int {
+    (min(22, min(size.height, body.desiredHeight(width: size.width))))
   }
 
   public func inlineDocument(size: Size) -> InlineDocument<String>? {
@@ -155,21 +155,21 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
         // finalized content is a prefix rewrite and forces a destructive history reset mid-stream.
         lines = []
       } else if let cached = historyRenderCache[entry.id], cached.entry == rendered,
-        cached.width == Int(size.width), cached.rawOutputMode == model.rawOutputMode,
+        cached.width == size.width, cached.rawOutputMode == model.rawOutputMode,
         cached.syntaxTheme == model.syntaxTheme,
         cached.prependSeparator == prependSeparator
       {
         lines = cached.lines
       } else {
         var renderedLines = renderer.terminalHistoryLines(
-          for: rendered, width: Int(size.width), sourceContinuation: false)
+          for: rendered, width: size.width, sourceContinuation: false)
         if !renderedLines.isEmpty, prependSeparator {
           renderedLines.insert(Line(""), at: 0)
         }
         lines = renderedLines
         historyRenderCache[entry.id] = CachedHistoryBlock(
           entry: rendered,
-          width: Int(size.width),
+          width: size.width,
           rawOutputMode: model.rawOutputMode,
           syntaxTheme: model.syntaxTheme,
           prependSeparator: prependSeparator,

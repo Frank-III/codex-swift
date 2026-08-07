@@ -743,13 +743,13 @@ public struct CodexTranscriptPager: Hashable, Sendable {
   public var backtrackCandidates: [RewindCandidate]
   public var selectedBacktrackIndex: Int?
   public var cachedTranscriptLines: [Line]?
-  public var cachedWidth: UInt16?
+  public var cachedWidth: Int?
   public var sourceEntries: [TranscriptEntry]?
 
   public init(
     scrollFromBottom: Int = 0, backtrackCandidates: [RewindCandidate] = [],
     selectedBacktrackIndex: Int? = nil, cachedTranscriptLines: [Line]? = nil,
-    cachedWidth: UInt16? = nil, sourceEntries: [TranscriptEntry]? = nil
+    cachedWidth: Int? = nil, sourceEntries: [TranscriptEntry]? = nil
   ) {
     self.scrollFromBottom = max(0, scrollFromBottom)
     self.backtrackCandidates = backtrackCandidates

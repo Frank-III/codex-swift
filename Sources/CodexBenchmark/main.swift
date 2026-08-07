@@ -13,8 +13,8 @@ struct CodexBenchmarkMain {
   @MainActor
   static func main() async throws {
     let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
-    let width = UInt16(clamping: options.width)
-    let height = UInt16(clamping: options.height)
+    let width = options.width
+    let height = options.height
     let size = Size(width: width, height: height)
     let rssAtLaunch = residentBytes()
 
@@ -69,7 +69,7 @@ struct CodexBenchmarkMain {
       application: application, size: size, runtime: &runtime, terminal: &terminal)
     let appendMilliseconds = milliseconds(since: appendStart)
 
-    let reflowSize = Size(width: UInt16(clamping: options.reflowWidth), height: height)
+    let reflowSize = Size(width: options.reflowWidth, height: height)
     var reflowTerminal = try Terminal(
       backend: TestBackend(width: reflowSize.width, height: reflowSize.height))
     let reflowStart = now()
@@ -79,7 +79,7 @@ struct CodexBenchmarkMain {
     let rssAfterReflow = residentBytes()
 
     _ = await application.update(.key(KeyEvent(.character("t"), modifiers: [.control])))
-    let pagerCache: (rows: Int, width: UInt16?) =
+    let pagerCache: (rows: Int, width: Int?) =
       if case .transcript(let pager) =
         application.model.overlay
       {
