@@ -68,6 +68,10 @@ import Testing
     var rewindItems: [RewindCandidate] = []
     var rewoundID: Int?
     var rewindDraft = RewindDraft(text: "")
+    var treeSnapshot = CodexSessionTreeSnapshot(
+      sessionID: "", items: [], activeLeafID: nil, selectedEditableEntryID: nil)
+    var navigatedTreeEntryID: CodexSessionEntryID?
+    var treeDraft: RewindDraft?
     var interruptCount = 0
 
     func submit(_ text: String) { submitted.append(text) }
@@ -124,6 +128,11 @@ import Testing
     func rewind(to candidateID: Int) async throws -> RewindDraft {
       rewoundID = candidateID
       return rewindDraft
+    }
+    func sessionTree() async throws -> CodexSessionTreeSnapshot { treeSnapshot }
+    func navigateSessionTree(to entryID: CodexSessionEntryID) async throws -> RewindDraft? {
+      navigatedTreeEntryID = entryID
+      return treeDraft
     }
   }
 
@@ -270,6 +279,35 @@ import Testing
       _ = await application.update(.key(KeyEvent(.character(Character(key)))))
     }
     #expect(model.composer.text == "say  now")
+  }
+
+  @Test func treeCommandNavigatesAndRestoresEditablePromptContent() async {
+    let entryID = CodexSessionEntryID(rawValue: "prompt")
+    let driver = Driver()
+    driver.treeSnapshot = CodexSessionTreeSnapshot(
+      sessionID: "session",
+      items: [
+        CodexSessionTreeItem(
+          id: entryID, parentID: nil, timestamp: 1, depth: 0, kind: .user,
+          preview: "earlier prompt", isOnActiveBranch: true, hasChildren: false,
+          label: nil)
+      ], activeLeafID: entryID, selectedEditableEntryID: nil)
+    driver.treeDraft = RewindDraft(
+      text: "earlier prompt",
+      images: [CodexImageAttachment(data: Data([1]), mimeType: "image/png", name: "old.png")])
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(composer: TextFieldState(text: "/tree")))
+    let application = CodexApplication(model: model, driver: driver)
+
+    #expect(await application.update(.key(KeyEvent(.enter))) == .redraw)
+    guard case .sessionTree = model.overlay else {
+      Issue.record("Expected session tree picker")
+      return
+    }
+    #expect(await application.update(.key(KeyEvent(.enter))) == .redraw)
+    #expect(driver.navigatedTreeEntryID == entryID)
+    #expect(model.composer.text == "earlier prompt")
+    #expect(model.imageAttachments.count == 1)
   }
 
   @Test func bangCommandUsesKwwkShellWithoutSubmittingToTheAgent() async {

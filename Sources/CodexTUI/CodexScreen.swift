@@ -441,6 +441,8 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       return Int.max
     case .sessions:
       return 16
+    case .sessionTree(let picker):
+      return min(18, picker.filteredItems.count + 6)
     case .rename:
       return 6
     case .sessionConfirmation:
@@ -1944,6 +1946,8 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           environment: environment)
     case .sessions(let picker):
       renderSessionPicker(picker, in: area, into: &buffer, environment: environment)
+    case .sessionTree(let picker):
+      renderSessionTreePicker(picker, in: area, into: &buffer, environment: environment)
     case .rename(let prompt):
       Text {
         Line {
@@ -2154,9 +2158,9 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         .render(in: area, into: &buffer, environment: environment)
     case .rewind(let picker):
       var rows: [Line] = [
-        Line("  Rewind to message", style: .init(modifiers: [.bold])),
+        Line("  Branch from message", style: .init(modifiers: [.bold])),
         Line(
-          "  The selected message and everything after it will be removed.",
+          "  The existing path is preserved as another branch.",
           style: .init(modifiers: [.dim])),
         Line(""),
       ]
@@ -2177,7 +2181,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       }
       rows += [
         Line(""),
-        Line("  Press enter to rewind or esc to cancel", style: .init(modifiers: [.dim])),
+        Line("  Press enter to branch or esc to cancel", style: .init(modifiers: [.dim])),
       ]
       Paragraph(Text(rows), wrap: .word, trimLeadingWhitespace: false)
         .render(in: area, into: &buffer, environment: environment)
@@ -2293,6 +2297,61 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       }
       rows.append(line)
     }
+    Text(rows).render(in: area, into: &buffer, environment: environment)
+  }
+
+  private func renderSessionTreePicker(
+    _ picker: SessionTreePicker, in area: Rect, into buffer: inout Buffer,
+    environment: RenderEnvironment
+  ) {
+    let items = picker.filteredItems
+    let visibleCount = max(1, area.height - 6)
+    let start = min(
+      max(0, picker.selectedIndex - visibleCount / 2), max(0, items.count - visibleCount))
+    let end = min(items.count, start + visibleCount)
+    var rows: [Line] = [
+      Line("  Session tree", style: .init(modifiers: [.bold])),
+      Line {
+        Span("  Search: ", style: .init(modifiers: [.dim]))
+        Span(
+          picker.query.text.isEmpty ? "Type to filter" : picker.query.text,
+          style: picker.query.text.isEmpty ? .init(modifiers: [.dim]) : .plain)
+      },
+      Line(""),
+    ]
+    if items.isEmpty {
+      rows.append(Line("  No matching entries", style: .init(modifiers: [.dim])))
+    } else {
+      for index in start..<end {
+        let item = items[index]
+        let selected = index == picker.selectedIndex
+        let isLeaf = item.id == picker.snapshot.activeLeafID
+        let style = selected ? Style(foreground: .cyan, modifiers: [.bold]) : .plain
+        let branch = String(repeating: "│ ", count: min(item.depth, 20))
+        let marker = isLeaf ? "● " : item.hasChildren ? "├ " : "└ "
+        let role =
+          item.kind == .user ? "you" : item.kind == .assistant ? "codex" : item.kind.rawValue
+        rows.append(
+          Line {
+            Span(selected ? "› " : "  ", style: style)
+            Span(
+              branch,
+              style: .init(foreground: item.isOnActiveBranch ? .cyan : nil, modifiers: [.dim]))
+            Span(marker, style: .init(foreground: isLeaf ? .cyan : nil))
+            Span("\(role): ", style: style.adding(.bold))
+            Span(item.preview, style: style)
+            if let label = item.label {
+              Span("  [\(label)]", style: .init(foreground: .yellow))
+            }
+          })
+      }
+    }
+    rows += [
+      Line(""),
+      Line(
+        "  ↑↓ navigate  enter branch/continue  type to filter  esc cancel",
+        style: .init(modifiers: [.dim])),
+    ]
     Text(rows).render(in: area, into: &buffer, environment: environment)
   }
 

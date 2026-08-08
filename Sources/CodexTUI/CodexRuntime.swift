@@ -103,7 +103,7 @@ public enum CodexRuntime {
         ?? environment["HOME"].map { "\($0)/.codex-swift" }
         ?? FileManager.default.temporaryDirectory.appendingPathComponent("codex-swift").path
     ).appendingPathComponent("sessions", isDirectory: true)
-    let sessionStore = SessionStore(directory: sessionDirectory)
+    let sessionStore = CodexSessionTreeStore(directory: sessionDirectory)
     let factory: @MainActor @Sendable (String, Model, [Message]) async -> CodingAgent = {
       sessionID, selected, messages in
       var replacementConfig = config

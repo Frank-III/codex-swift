@@ -251,7 +251,7 @@ import Testing
     }
   }
 
-  @Test func rewindPickerMatchesKwwkBranchWorkflow() {
+  @Test func rewindPickerExplainsThatTheExistingBranchIsPreserved() {
     let snapshot = CodexSnapshot(
       overlay: .rewind(
         RewindPicker(candidates: [
@@ -264,13 +264,62 @@ import Testing
       │                                                                            │
       │                                                                            │
       │                                                                            │
-      │  Rewind to message                                                         │
-      │  The selected message and everything after it will be removed.             │
+      │  Branch from message                                                       │
+      │  The existing path is preserved as another branch.                         │
       │                                                                            │
       │  inspect the renderer                                                      │
       │› [1 image] match this Codex screen                                         │
       │                                                                            │
-      │  Press enter to rewind or esc to cancel                                    │
+      │  Press enter to branch or esc to cancel                                    │
+      """
+    }
+  }
+
+  @Test func sessionTreeUsesCodexBranchChromeAndMarksTheActiveLeaf() {
+    let root = CodexSessionEntryID(rawValue: "root")
+    let answer = CodexSessionEntryID(rawValue: "answer")
+    let oldBranch = CodexSessionEntryID(rawValue: "old")
+    let active = CodexSessionEntryID(rawValue: "active")
+    let tree = CodexSessionTreeSnapshot(
+      sessionID: "session",
+      items: [
+        CodexSessionTreeItem(
+          id: root, parentID: nil, timestamp: 1, depth: 0, kind: .user,
+          preview: "Design the session tree", isOnActiveBranch: true, hasChildren: true,
+          label: "start"),
+        CodexSessionTreeItem(
+          id: answer, parentID: root, timestamp: 2, depth: 1, kind: .assistant,
+          preview: "Let's keep every path", isOnActiveBranch: true, hasChildren: true,
+          label: nil),
+        CodexSessionTreeItem(
+          id: oldBranch, parentID: answer, timestamp: 3, depth: 2, kind: .user,
+          preview: "Try the discarded path", isOnActiveBranch: false, hasChildren: false,
+          label: nil),
+        CodexSessionTreeItem(
+          id: active, parentID: answer, timestamp: 4, depth: 2, kind: .user,
+          preview: "Keep the active path", isOnActiveBranch: true, hasChildren: false,
+          label: nil),
+      ], activeLeafID: active, selectedEditableEntryID: nil)
+    let snapshot = CodexSnapshot(
+      overlay: .sessionTree(SessionTreePicker(snapshot: tree, selectedID: active)),
+      showHeader: false)
+
+    assertWidget(CodexScreen(snapshot: snapshot), size: Size(width: 84, height: 14)) {
+      """
+      │                                                                                    │
+      │                                                                                    │
+      │                                                                                    │
+      │                                                                                    │
+      │  Session tree                                                                      │
+      │  Search: Type to filter                                                            │
+      │                                                                                    │
+      │  ├ you: Design the session tree  [start]                                           │
+      │  │ ├ codex: Let's keep every path                                                  │
+      │  │ │ └ you: Try the discarded path                                                 │
+      │› │ │ ● you: Keep the active path                                                   │
+      │                                                                                    │
+      │  ↑↓ navigate  enter branch/continue  type to filter  esc cancel                    │
+      │                                                                                    │
       """
     }
   }
