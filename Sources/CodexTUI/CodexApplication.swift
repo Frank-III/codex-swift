@@ -1095,6 +1095,12 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
     if case .requestUserInput(var request) = model.overlay {
       return updateRequestUserInput(&request, event: event)
     }
+    if case .models(var picker) = model.overlay, picker.query.handle(event) {
+      picker.selectedIndex = 0
+      picker.reconcileSelection()
+      model.overlay = .models(picker)
+      return .redraw
+    }
     if isComposerMentionPopup, eventInsertsWhitespace(event) {
       model.overlay = nil
       _ = model.handleComposerEvent(event)
@@ -1296,8 +1302,8 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       break
     case .models(var picker):
       switch key.key {
-      case .escape where !picker.query.isEmpty:
-        picker.query = ""
+      case .escape where !picker.query.text.isEmpty:
+        picker.query = TextFieldState()
         picker.selectedIndex = 0
         model.overlay = .models(picker)
       case .escape:
@@ -1323,15 +1329,6 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       case .pageDown:
         picker.selectedIndex = min(
           max(0, picker.filteredModels.count - 1), picker.selectedIndex + 10)
-        model.overlay = .models(picker)
-      case .backspace:
-        if !picker.query.isEmpty { picker.query.removeLast() }
-        picker.selectedIndex = 0
-        model.overlay = .models(picker)
-      case .character(let character)
-      where key.modifiers.intersection([.control, .option, .command, .meta, .hyper]).isEmpty:
-        picker.query.append(character)
-        picker.selectedIndex = 0
         model.overlay = .models(picker)
       case .enter:
         guard let selected = picker.filteredModels[safe: picker.selectedIndex] else {

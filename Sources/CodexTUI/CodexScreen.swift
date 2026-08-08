@@ -121,8 +121,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       return wrappedFieldCursor(
         answer.draft, prefix: "  › ", row: question.options.count + 5, in: area)
     case .models(let picker):
-      return singleLineFieldCursor(
-        TextFieldState(text: picker.query), prefix: "  Search: ", row: 2, in: area)
+      return singleLineFieldCursor(picker.query, prefix: "  Search: ", row: 2, in: area)
     case .theme(let picker):
       return singleLineFieldCursor(picker.query, prefix: "  Search: ", row: 1, in: area)
     case .keymap(let picker):
@@ -1660,7 +1659,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           style: .init(modifiers: [.dim])),
         Line {
           Span("  Search: ", style: .init(modifiers: [.dim]))
-          Span(picker.query.isEmpty ? "type to filter" : picker.query)
+          Span(picker.query.text.isEmpty ? "type to filter" : picker.query.text)
         },
         Line(""),
       ]
@@ -2328,17 +2327,14 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           Line {
             Span(selected ? "› " : "  ", style: style)
             Span(
-              relativeTime(session.createdAt).padding(
-                toLength: 9, withPad: " ", startingAt: 0),
+              TerminalWidth.fitted(relativeTime(session.createdAt), to: 9, ellipsis: nil),
               style: .init(modifiers: [.dim]))
             Span(
-              relativeTime(session.updatedAt).padding(
-                toLength: 12, withPad: " ", startingAt: 0),
+              TerminalWidth.fitted(relativeTime(session.updatedAt), to: 12, ellipsis: nil),
               style: .init(modifiers: [.dim])
             )
             Span(
-              compactPath(session.directory).padding(
-                toLength: 18, withPad: " ", startingAt: 0),
+              TerminalWidth.padded(compactPath(session.directory), to: 18),
               style: .init(modifiers: [.dim]))
             Span(session.title, style: style)
           })
@@ -2365,7 +2361,9 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let display = displayPath(path)
     let width = 16
     guard TerminalWidth.of(display) > width else { return display }
-    return "…" + String(display.suffix(width - 1))
+    let ellipsis = "…"
+    return ellipsis
+      + TerminalWidth.suffix(display, fitting: width - TerminalWidth.of(ellipsis))
   }
 
   private func renderPermissions(

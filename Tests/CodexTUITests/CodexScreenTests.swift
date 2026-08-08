@@ -668,6 +668,46 @@ import Testing
     }
   }
 
+  @Test func sessionPickerColumnsStayAlignedForWideDirectories() throws {
+    let now = Int64(Date().timeIntervalSince1970 * 1_000)
+    let sessions = [
+      CodexSessionSummary(
+        id: "ascii", title: "ASCII title", directory: "/tmp/abcdefghijklmnopqrstu",
+        createdAt: now, updatedAt: now, messageCount: 1),
+      CodexSessionSummary(
+        id: "wide", title: "Wide title", directory: "/tmp/界界界界界界界界界界",
+        createdAt: now, updatedAt: now, messageCount: 1),
+    ]
+    let screen = CodexScreen(
+      snapshot: CodexSnapshot(
+        overlay: .sessions(SessionPicker(action: .resume, sessions: sessions)),
+        showHeader: false))
+    let area = Rect(x: 0, y: 0, width: 100, height: 16)
+    var frame = Frame(buffer: Buffer(area: area))
+
+    frame.render(screen, in: area)
+
+    func position(of value: String) -> Position? {
+      let symbols = value.map(String.init)
+      guard !symbols.isEmpty else { return nil }
+      for y in area.y..<area.bottom {
+        for x in area.x...(area.right - symbols.count) {
+          guard
+            symbols.indices.allSatisfy({ offset in
+              frame.buffer[Position(x: x + offset, y: y)].symbol == symbols[offset]
+            })
+          else { continue }
+          return Position(x: x, y: y)
+        }
+      }
+      return nil
+    }
+
+    let ascii = try #require(position(of: "ASCII title"))
+    let wide = try #require(position(of: "Wide title"))
+    #expect(ascii.x == wide.x)
+  }
+
   @Test func reasoningPickerMatchesCodexSelectionSurface() {
     let options = [
       CodexReasoningOption(

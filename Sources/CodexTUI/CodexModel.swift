@@ -235,16 +235,16 @@ public struct CodexModelOption: Identifiable, Hashable, Sendable {
 public struct ModelPicker: Hashable, Sendable {
   public var models: [CodexModelOption]
   public var selectedIndex: Int
-  public var query: String
+  public var query: TextFieldState
 
   public init(models: [CodexModelOption], selectedIndex: Int = 0, query: String = "") {
     self.models = models
     self.selectedIndex = selectedIndex
-    self.query = query
+    self.query = TextFieldState(text: query)
   }
 
   public var filteredModels: [CodexModelOption] {
-    let terms = query.lowercased().split(whereSeparator: { $0.isWhitespace })
+    let terms = query.text.lowercased().split(whereSeparator: { $0.isWhitespace })
     guard !terms.isEmpty else { return models }
     return models.filter { model in
       let haystack = "\(model.provider) \(model.modelID) \(model.name)".lowercased()

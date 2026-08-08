@@ -370,6 +370,28 @@ import Testing
     #expect(driver.selectedModel == "anthropic::claude")
   }
 
+  @Test func modelPickerSupportsPasteAndCursorEditing() async {
+    let models = [
+      CodexModelOption(
+        id: "anthropic::claude", modelID: "claude", name: "Claude Sonnet",
+        provider: "anthropic", contextWindow: 200_000, supportsReasoning: false)
+    ]
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(overlay: .models(ModelPicker(models: models))))
+    let application = CodexApplication(model: model, driver: Driver())
+
+    #expect(await application.update(.paste("anthropic")) == .redraw)
+    #expect(await application.update(.key(KeyEvent(.left))) == .redraw)
+    #expect(await application.update(.key(KeyEvent(.character("X")))) == .redraw)
+
+    guard case .models(let picker) = model.overlay else {
+      Issue.record("Expected editable model picker")
+      return
+    }
+    #expect(picker.query.text == "anthropiXc")
+    #expect(picker.query.cursor == 9)
+  }
+
   @Test func reasoningSelectionUpdatesTheRuntimeDriver() async {
     let picker = ReasoningPicker(
       modelID: "openai::gpt-5.6-sol",
