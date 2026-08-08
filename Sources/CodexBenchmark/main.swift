@@ -1,7 +1,7 @@
 import CodexTUI
 import Darwin
 import Foundation
-import Ratatui
+import TermLoom
 
 @main
 struct CodexBenchmarkMain {

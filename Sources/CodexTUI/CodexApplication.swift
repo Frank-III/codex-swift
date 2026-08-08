@@ -1,6 +1,6 @@
 import Foundation
-import Ratatui
-import RatatuiSyntaxHighlighting
+import TermLoom
+import TermLoomSyntaxHighlighting
 
 @MainActor
 public final class CodexApplication: TerminalApplication, InlineViewportSizing,

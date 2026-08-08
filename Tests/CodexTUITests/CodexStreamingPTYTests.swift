@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import KWWKAI
 import KWWKAgent
-import Ratatui
+import TermLoom
 import Testing
 
 @testable import CodexTUI

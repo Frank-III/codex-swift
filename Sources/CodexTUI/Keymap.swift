@@ -1,5 +1,5 @@
 import Foundation
-import Ratatui
+import TermLoom
 
 public enum CodexKeymapContext: String, CaseIterable, Codable, Hashable, Sendable {
   case global

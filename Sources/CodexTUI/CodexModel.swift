@@ -1,7 +1,7 @@
 import Foundation
 import Observation
-import Ratatui
-import RatatuiSyntaxHighlighting
+import TermLoom
+import TermLoomSyntaxHighlighting
 
 public enum CodexMode: String, Hashable, Sendable {
   case defaultMode = "default"

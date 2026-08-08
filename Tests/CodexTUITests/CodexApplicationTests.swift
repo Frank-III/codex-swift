@@ -1,7 +1,7 @@
 import Foundation
 import KWWKAgent
-import Ratatui
-import RatatuiSyntaxHighlighting
+import TermLoom
+import TermLoomSyntaxHighlighting
 import Testing
 
 @testable import CodexTUI

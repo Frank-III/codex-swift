@@ -1,6 +1,6 @@
 import Foundation
-import Ratatui
-import RatatuiSyntaxHighlighting
+import TermLoom
+import TermLoomSyntaxHighlighting
 
 public struct CodexScreen: Widget, Hashable, Sendable {
   private static let syntaxHighlighter = TerminalSyntaxHighlighter()

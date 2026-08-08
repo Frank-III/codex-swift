@@ -1,7 +1,7 @@
 import Foundation
-import Ratatui
-import RatatuiSyntaxHighlighting
-import RatatuiTestSupport
+import TermLoom
+import TermLoomSyntaxHighlighting
+import TermLoomTestSupport
 import Testing
 
 @testable import CodexTUI
@@ -438,15 +438,15 @@ import Testing
             | Layer | Owner |
             | --- | --- |
             | Agent runtime | KWWK |
-            | Terminal UI | Ratatui Swift |
+            | Terminal UI | TermLoom Swift |
             """, streaming: false))
       ], showHeader: false)
     assertWidget(CodexScreen(snapshot: snapshot), size: Size(width: 50, height: 10)) {
       """
       │• Layer          Owner                            │
-      │  ─────────────  ─────────────                    │
+      │  ─────────────  ──────────────                   │
       │  Agent runtime  KWWK                             │
-      │  Terminal UI    Ratatui Swift                    │
+      │  Terminal UI    TermLoom Swift                   │
       │                                                  │
       │                                                  │
       │                                                  │
@@ -467,7 +467,7 @@ import Testing
             | Layer | Owner |
             | --- | --- |
             | Agent runtime | KWWK |
-            | Terminal UI | Ratatui Swift |
+            | Terminal UI | TermLoom Swift |
             """, streaming: false))
       ], showHeader: false)
     assertWidget(CodexScreen(snapshot: snapshot), size: Size(width: 24, height: 12)) {
@@ -476,7 +476,7 @@ import Testing
       │  Owner: KWWK           │
       │                        │
       │  Layer: Terminal UI    │
-      │  Owner: Ratatui Swift  │
+      │  Owner: TermLoom Swift │
       │                        │
       │                        │
       │                        │
@@ -788,7 +788,7 @@ import Testing
     let snapshot = CodexSnapshot(
       model: "gpt-5.6-sol",
       reasoningEffort: "medium",
-      directory: "~/projects/learn_swift/ratetui-swift",
+      directory: "~/projects/learn_swift/termloom",
       isWorking: true,
       elapsedSeconds: 353,
       queuedMessages: [
@@ -812,7 +812,7 @@ import Testing
       │                                                                                                                        │
       │› Find and fix a bug in @filename                                                                                       │
       │                                                                                                                        │
-      │  gpt-5.6-sol medium · ~/projects/learn_swift/ratetui-swift                                     Goal achieved (4h 25m)  │
+      │  gpt-5.6-sol medium · ~/projects/learn_swift/termloom                                          Goal achieved (4h 25m)  │
       """
     }
   }

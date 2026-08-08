@@ -1,7 +1,7 @@
 #if canImport(Darwin)
   import Darwin
   import Foundation
-  import Ratatui
+  import TermLoom
   import Testing
 
   @testable import CodexTUI

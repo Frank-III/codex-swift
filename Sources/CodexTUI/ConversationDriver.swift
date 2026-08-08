@@ -1,7 +1,7 @@
 import Foundation
 import KWWKAI
 import KWWKAgent
-import Ratatui
+import TermLoom
 
 public enum RewindError: LocalizedError, Equatable {
   case invalidCandidate

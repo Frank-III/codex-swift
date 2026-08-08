@@ -1,7 +1,7 @@
 import Foundation
 import KWWKAI
 import KWWKAgent
-import RatatuiSyntaxHighlighting
+import TermLoomSyntaxHighlighting
 
 #if canImport(AppKit)
   import AppKit

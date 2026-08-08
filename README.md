@@ -4,10 +4,10 @@ An idiomatic Swift implementation of the OpenAI Codex terminal experience.
 
 - UX and behavioral reference: `openai/codex` at `e428a12d2235fe2bc10b10bc45d245d1f491f3c7`
 - Agent/runtime harness: released `EYHN/kwwk` `0.1.36` (`e8535dd0b417213941ee4003f9c9ecb1f18523ba`)
-- Renderer: the sibling `ratetui-swift` package
+- Renderer: the sibling `termloom` package
 
 This is not a source translation. Codex's interaction states and visual behavior are modeled as
-Swift values, KWWK owns model/tool execution, and Ratatui Swift owns terminal correctness.
+Swift values, KWWK owns model/tool execution, and TermLoom Swift owns terminal correctness.
 
 ```sh
 mise run test
@@ -26,10 +26,10 @@ memory. Supported provider environment variables are merged into the same catalo
 
 The application follows Codex's two-part normal-buffer design: a retained 22-row live viewport owns
 the mutable stream/composer, while each newline-stable Markdown prefix and finalized transcript cell
-is inserted immediately above it through Ratatui's inline scrolling-region algorithm. Those committed
+is inserted immediately above it through TermLoom's inline scrolling-region algorithm. Those committed
 rows fill the rest of a tall terminal and then continue into native terminal scrollback instead of
 being clipped from an oversized frame. Standard hosts use Codex Rust's bottom-margin CRLF strategy;
-Supaterm, Zellij, and tmux use Ratatui's conservative whole-terminal output/repaint path because those
+Supaterm, Zellij, and tmux use TermLoom's conservative whole-terminal output/repaint path because those
 hosts can discard every row moved out through a restricted scrolling margin. The source model remains complete for Ctrl-T/PageUp navigation
 and width-change reflow. Inline origin reservation follows Ratatui Rust's probe-before-append algorithm
 and falls back to a known absolute bottom anchor when CPR is unavailable. Mouse tracking stays
@@ -55,7 +55,7 @@ system prompt for subsequent turns.
 `/theme` follows Codex's searchable syntax-theme picker with live preview, Escape restoration, and
 confirm-time persistence in `~/.codex-swift/settings.json`. It exposes the same 32 built-in theme
 names and loads custom `.tmTheme` files from `~/.codex-swift/themes`. Fenced code, shell commands,
-file-extension-aware diffs, and the source-shaped Rust diff preview all use Ratatui Swift's reusable
+file-extension-aware diffs, and the source-shaped Rust diff preview all use TermLoom Swift's reusable
 pure-Swift 192-language highlighting module rather than app-specific token rules. `/raw [on|off]`
 and Option-R toggle Codex's copy-friendly transcript rendering and persist the choice in the same
 settings file.
@@ -103,7 +103,7 @@ expand and word-wrap like upstream instead of being clipped to a single composer
 `/vim` enables modal composer editing. It starts in Normal mode, shows `Vim: Normal` or
 `Vim: Insert` in the footer, handles Escape as the Insert-to-Normal transition, supports common
 motions and edit operators, and returns to Normal mode after a successful submission.
-Ratatui Swift drives the terminal's native steady-bar Insert cursor and restores the user's default
+TermLoom Swift drives the terminal's native steady-bar Insert cursor and restores the user's default
 cursor shape in Normal mode and when the terminal session exits.
 
 Conversations persist under `~/.codex-swift/sessions` through KWWK's append-only JSONL store.

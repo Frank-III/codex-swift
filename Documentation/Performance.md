@@ -94,11 +94,11 @@ cell-oriented, lazily measured pager index; the normal inline-history row cap mu
 - Composer-only changes must not rerender completed Markdown or allocate another copy of terminal history.
 - `CodexSessionModel.transcriptRevision` advances on semantic transcript mutation, not local composer edits.
 - `InlineDocument.revision` is an application-owned promise. At the same document identity and width, an
-  unchanged non-`nil` revision lets Ratatui bypass stable-block reconciliation.
+  unchanged non-`nil` revision lets TermLoom bypass stable-block reconciliation.
 - Width changes debounce for 75 ms, then format and replay only the source-backed row-capped tail.
 - Per-entry rendering remains identity-based so appends and mutable-tail changes do not reparse completed Markdown.
 - Ordinary overlays render only the overlay, composer, and mutable tail; they never repaint committed history.
-- Streaming and external model changes opt into Ratatui's periodic redraw capability while work is active.
+- Streaming and external model changes opt into TermLoom's periodic redraw capability while work is active.
 - The revision is an optimization only; applications that cannot provide a reliable revision should leave
   it `nil` and retain full source-backed comparison.
 
@@ -108,7 +108,7 @@ on every redraw. The benchmark is retained to prevent that regression.
 
 A second defect appeared only in the real terminal path: a cold resume produced one backend insertion per
 semantic block. Supaterm's whole-terminal strategy cleared and re-reserved the live pane for each block,
-creating long blank regions and withholding input until thousands of writes completed. Ratatui now groups
+creating long blank regions and withholding input until thousands of writes completed. TermLoom now groups
 canonical rows into bounded render buffers and marks them as one history batch; the backend clears once,
 streams continuation chunks, and reserves the composer only after the final chunk. A 1,000-turn PTY soak
 then reached output quiescence in 2.70 seconds, accepted a new chat, completed the simulated response in
