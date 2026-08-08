@@ -14,6 +14,11 @@ visual behavior are modeled as Swift values, KWWK owns model and tool execution,
 The application exists both as a compact usable agent UI and as a realistic test of TermLoom's inline history,
 streaming, editing, overlays, syntax highlighting, and resize behavior.
 
+![Codex Swift composing a prompt, streaming a response, and opening transcript navigation](Documentation/Media/demo.gif)
+
+_Recorded from the deterministic `codex-swift --demo` runtime with
+[Terminal Control](https://github.com/anomalyco/terminal-control); no provider credentials or network access are used._
+
 ```sh
 mise run test
 mise run demo
