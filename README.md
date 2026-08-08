@@ -1,13 +1,18 @@
 # Codex Swift
 
-An idiomatic Swift implementation of the OpenAI Codex terminal experience.
+An idiomatic Swift implementation of the OpenAI Codex terminal experience and a production pressure client for
+[TermLoom](https://github.com/Frank-III/termloom).
 
-- UX and behavioral reference: `openai/codex` at `e428a12d2235fe2bc10b10bc45d245d1f491f3c7`
-- Agent/runtime harness: released `EYHN/kwwk` `0.1.36` (`e8535dd0b417213941ee4003f9c9ecb1f18523ba`)
-- Renderer: the sibling `termloom` package
+- UX and behavioral reference: [OpenAI Codex](https://github.com/openai/codex) at
+  `e428a12d2235fe2bc10b10bc45d245d1f491f3c7`
+- Underlying agent and tool runtime: [KWWK](https://github.com/EYHN/kwwk) `0.1.36`
+  (`e8535dd0b417213941ee4003f9c9ecb1f18523ba`)
+- Terminal framework: [TermLoom](https://github.com/Frank-III/termloom)
 
-This is not a source translation. Codex's interaction states and visual behavior are modeled as
-Swift values, KWWK owns model/tool execution, and TermLoom Swift owns terminal correctness.
+This is not a source translation and is not affiliated with or endorsed by OpenAI. Codex's interaction states and
+visual behavior are modeled as Swift values, KWWK owns model and tool execution, and TermLoom owns terminal correctness.
+The application exists both as a compact usable agent UI and as a realistic test of TermLoom's inline history,
+streaming, editing, overlays, syntax highlighting, and resize behavior.
 
 ```sh
 mise run test

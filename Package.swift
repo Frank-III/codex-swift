@@ -11,7 +11,7 @@ let package = Package(
     .executable(name: "codex-benchmark", targets: ["CodexBenchmark"]),
   ],
   dependencies: [
-    .package(path: "../termloom"),
+    .package(url: "https://github.com/Frank-III/termloom.git", branch: "main"),
     .package(url: "https://github.com/EYHN/kwwk.git", exact: "0.1.36"),
   ],
   targets: [

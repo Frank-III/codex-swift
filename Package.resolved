@@ -1,5 +1,5 @@
 {
-  "originHash" : "f4403ef791d89218d8ca2d383437707adc92855c55f7cb15b5952d011b8a2840",
+  "originHash" : "79b6249693a374d136f560d368b3d948301c2528980d38a757b1af1fbfa4c9b2",
   "pins" : [
     {
       "identity" : "cstb",
@@ -143,6 +143,15 @@
       "state" : {
         "revision" : "704705c5c51156ede21172a38654d522ce487074",
         "version" : "1.8.0"
+      }
+    },
+    {
+      "identity" : "termloom",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Frank-III/termloom.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "e04dbed7e44ff7ea0570168cc399413a90d6c58a"
       }
     },
     {
