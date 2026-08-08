@@ -1082,6 +1082,20 @@ public final class CodexSessionModel {
   }
 
   @discardableResult
+  public func clearComposer() -> Bool {
+    guard !composer.text.isEmpty || !imageAttachments.isEmpty else { return false }
+    composer = TextFieldState()
+    pendingPastes.removeAll()
+    historyIndex = nil
+    imageAttachments.removeAll()
+    selectedImageAttachmentIndex = nil
+    vimPendingOperator = nil
+    vimPreferredColumn = nil
+    vimTextObjectAround = nil
+    return true
+  }
+
+  @discardableResult
   public func takeComposerText() -> String? {
     takeComposerSubmission()?.text
   }

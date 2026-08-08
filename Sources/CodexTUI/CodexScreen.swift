@@ -5,9 +5,16 @@ import TermLoomSyntaxHighlighting
 public struct CodexScreen: Widget, Hashable, Sendable {
   private static let syntaxHighlighter = TerminalSyntaxHighlighter()
   public var snapshot: CodexSnapshot
+  private var effortAnimation: CodexEffortAnimationFrame?
 
   public init(snapshot: CodexSnapshot) {
     self.snapshot = snapshot
+    effortAnimation = nil
+  }
+
+  init(snapshot: CodexSnapshot, effortAnimation: CodexEffortAnimationFrame?) {
+    self.snapshot = snapshot
+    self.effortAnimation = effortAnimation
   }
 
   public func render(in area: Rect, into frame: inout Frame) {
@@ -819,19 +826,28 @@ public struct CodexScreen: Widget, Hashable, Sendable {
     let style = Style(background: background)
     let sanitized = sanitizeUserText(source).trimmingCharacters(in: .newlines)
     guard !sanitized.isEmpty else { return [] }
-    let padding = String(repeating: " ", count: max(1, width))
+
+    // Keep the final terminal column untouched. Styled spaces in that column can mark a committed
+    // history row as soft-wrapped in Ghostty-family hosts; resizing then reflows the background cells
+    // into the message text as displaced horizontal bars.
+    let paintedWidth = max(1, width - 1)
+    let padding = String(repeating: " ", count: paintedWidth)
     var result = [Line(padding, style: style)]
     var isFirst = true
     for physicalLine in sanitized.split(separator: "\n", omittingEmptySubsequences: false) {
       let chunks = hangingWrap(
         String(physicalLine), firstWidth: max(1, width - 3), restWidth: max(1, width - 3))
       for chunk in chunks {
+        let prefix = isFirst ? "› " : "  "
+        let trailingWidth = max(
+          0, paintedWidth - TerminalWidth.of(prefix) - TerminalWidth.of(chunk))
         result.append(
-          Line(style: style) {
+          Line {
             Span(
-              isFirst ? "› " : "  ",
+              prefix,
               style: .init(background: background, modifiers: isFirst ? [.bold, .dim] : []))
             Span(chunk, style: style)
+            Span(String(repeating: " ", count: trailingWidth), style: style)
           })
         isFirst = false
       }
@@ -1524,7 +1540,12 @@ public struct CodexScreen: Widget, Hashable, Sendable {
       let displayed = snapshot.composer.text.isEmpty ? placeholder : line
       let textStyle: Style = snapshot.composer.text.isEmpty ? .init(modifiers: [.dim]) : .plain
       Line(style: panelStyle) {
-        Span(row == 0 ? "› " : "  ", style: .init(modifiers: row == 0 ? [.bold] : []))
+        if row == 0 {
+          CodexMotion.promptSpan(reasoningEffort: snapshot.reasoningEffort)
+          Span(" ")
+        } else {
+          Span("  ")
+        }
         Span(displayed, style: textStyle)
       }
       .render(
@@ -1533,35 +1554,48 @@ public struct CodexScreen: Widget, Hashable, Sendable {
           height: 1),
         into: &buffer, environment: environment)
     }
+    if let effortAnimation {
+      CodexMotion.paintIgnition(effortAnimation, in: panel, into: &buffer)
+    }
     guard footerHeight > 0, area.height > panelHeight else { return }
     let footerY = area.bottom - 1
-    let left =
-      snapshot.mode == .side
-      ? "  \(snapshot.model) \(snapshot.reasoningEffort)"
-      : "  \(snapshot.model) \(snapshot.reasoningEffort) · \(displayPath(snapshot.directory))"
     let baseRight =
       snapshot.mode == .side
       ? "Side from main thread · ctrl + / to switch · ctrl + c to close"
       : snapshot.rightStatus ?? ""
     let vimIndicator = snapshot.vimEnabled ? "Vim: \(snapshot.vimMode.rawValue)" : ""
     let right = [baseRight, vimIndicator].filter { !$0.isEmpty }.joined(separator: " | ")
-    let gap = max(1, area.width - TerminalWidth.of(left) - TerminalWidth.of(right) - 2)
-    Line {
-      Span("  \(snapshot.model)", style: .init(foreground: .yellow))
-      Span(" \(snapshot.reasoningEffort)")
-      if snapshot.mode != .side {
-        Span(" · ", style: .init(modifiers: [.dim]))
-        Span(displayPath(snapshot.directory), style: .init(foreground: .green))
+    func footerLine(reasoningEffort: String) -> Line {
+      let left =
+        snapshot.mode == .side
+        ? "  \(snapshot.model) \(reasoningEffort)"
+        : "  \(snapshot.model) \(reasoningEffort) · \(displayPath(snapshot.directory))"
+      let gap = max(1, area.width - TerminalWidth.of(left) - TerminalWidth.of(right) - 2)
+      return Line {
+        Span("  \(snapshot.model)", style: .init(foreground: .yellow))
+        Span(" \(reasoningEffort)")
+        if snapshot.mode != .side {
+          Span(" · ", style: .init(modifiers: [.dim]))
+          Span(displayPath(snapshot.directory), style: .init(foreground: .green))
+        }
+        Span(String(repeating: " ", count: gap))
+        if !right.isEmpty {
+          Span(
+            right,
+            style: .init(
+              foreground: snapshot.vimMode == .insert && snapshot.vimEnabled ? .green : .magenta))
+        }
+        Span("  ")
       }
-      Span(String(repeating: " ", count: gap))
-      if !right.isEmpty {
-        Span(
-          right,
-          style: .init(
-            foreground: snapshot.vimMode == .insert && snapshot.vimEnabled ? .green : .magenta))
-      }
-      Span("  ")
-    }.render(
+    }
+    let currentFooter = footerLine(reasoningEffort: snapshot.reasoningEffort)
+    let renderedFooter =
+      effortAnimation.map {
+        CodexMotion.effortFooterLine(
+          animation: $0, current: currentFooter,
+          previous: footerLine(reasoningEffort: $0.previousReasoningEffort), width: area.width)
+      } ?? currentFooter
+    renderedFooter.render(
       in: Rect(x: area.x, y: footerY, width: area.width, height: 1),
       into: &buffer, environment: environment)
   }
@@ -1590,7 +1624,7 @@ public struct CodexScreen: Widget, Hashable, Sendable {
         }
         Line {
           Span("ctrl-c", style: .init(foreground: .cyan))
-          Span(" quit when idle")
+          Span(" clear input or quit when idle")
         }
         Line {
           Span("!", style: .init(foreground: .cyan))

@@ -49,6 +49,13 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
     var startLineOffset: Int
   }
 
+  private struct ActiveEffortAnimation {
+    var tier: CodexEffortTier
+    var style: CodexIgnitionStyle
+    var previousReasoningEffort: String
+    var startedAt: TimeInterval
+  }
+
   private var externalEditorRequested = false
   private var backtrackPrimed = false
   private var historyRenderCache: [String: CachedHistoryBlock] = [:]
@@ -63,6 +70,9 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
   private let resizeReflowDebounce: Duration = .milliseconds(75)
   private let historyReplayRowLimit = 1_000
   private let historyReplayReanchorRowLimit = 2_000
+  private var observedReasoningEffort: String
+  private var activeEffortAnimation: ActiveEffortAnimation?
+  private var lastIgnitionStyle: CodexIgnitionStyle?
 
   public init(
     model: CodexSessionModel, driver: any CodexConversationDriving,
@@ -71,20 +81,28 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
     self.model = model
     self.driver = driver
     self.systemServices = systemServices
+    observedReasoningEffort = model.reasoningEffort
   }
 
   // Codex already owns a complete event/stream redraw scheduler. Automatic Observation invalidation would
   // duplicate those frames and can expose transient multi-property model updates as visible flashes.
   public var automaticallyTracksObservableState: Bool { false }
-  public var needsPeriodicRedraw: Bool { model.isWorking || resizeReflowDeadline != nil }
+  public var needsPeriodicRedraw: Bool {
+    let animationIsActive =
+      activeEffortAnimation.map {
+        (ProcessInfo.processInfo.systemUptime - $0.startedAt) * 1_000
+          < Double(CodexMotion.totalDurationMilliseconds)
+      } ?? false
+    return model.isWorking || resizeReflowDeadline != nil || animationIsActive
+  }
 
   public var body: CodexScreen {
     var snapshot = model.snapshot
     if case .transcript(let pager) = snapshot.overlay {
-      guard pager.cachedTranscriptLines != nil else { return CodexScreen(snapshot: snapshot) }
+      guard pager.cachedTranscriptLines != nil else { return animatedScreen(snapshot) }
       snapshot.entries = []
       snapshot.showHeader = false
-      return CodexScreen(snapshot: snapshot)
+      return animatedScreen(snapshot)
     }
 
     // Completed entries form a stable prefix. Walking backward from the mutable tail keeps ordinary
@@ -113,7 +131,37 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       return live
     }
     if liveStart > model.entries.startIndex { snapshot.showHeader = false }
-    return CodexScreen(snapshot: snapshot)
+    return animatedScreen(snapshot)
+  }
+
+  private func animatedScreen(_ snapshot: CodexSnapshot) -> CodexScreen {
+    synchronizeEffortAnimation(with: snapshot.reasoningEffort)
+    let now = ProcessInfo.processInfo.systemUptime
+    let animation: CodexEffortAnimationFrame? = activeEffortAnimation.flatMap { active in
+      let elapsed = max(0, Int(((now - active.startedAt) * 1_000).rounded()))
+      guard elapsed < CodexMotion.totalDurationMilliseconds,
+        ProcessInfo.processInfo.environment["NO_COLOR"] == nil
+      else { return nil }
+      return CodexEffortAnimationFrame(
+        tier: active.tier, style: active.style, elapsedMilliseconds: elapsed,
+        previousReasoningEffort: active.previousReasoningEffort)
+    }
+    return CodexScreen(snapshot: snapshot, effortAnimation: animation)
+  }
+
+  private func synchronizeEffortAnimation(with reasoningEffort: String) {
+    guard reasoningEffort != observedReasoningEffort else { return }
+    let previous = observedReasoningEffort
+    observedReasoningEffort = reasoningEffort
+    guard let tier = CodexEffortTier(reasoningEffort: reasoningEffort) else {
+      activeEffortAnimation = nil
+      return
+    }
+    let style = CodexMotion.nextIgnitionStyle(after: lastIgnitionStyle)
+    lastIgnitionStyle = style
+    activeEffortAnimation = ActiveEffortAnimation(
+      tier: tier, style: style, previousReasoningEffort: previous,
+      startedAt: ProcessInfo.processInfo.systemUptime)
   }
 
   public func desiredInlineViewportHeight(size: Size) -> Int {
@@ -552,6 +600,13 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
         }
         if model.isWorking {
           driver.interrupt()
+          return .redraw
+        }
+        if model.clearComposer() {
+          backtrackPrimed = false
+          model.slashCommandSelection = 0
+          model.slashPopupDismissed = false
+          if model.rightStatus == "esc again to rewind" { model.rightStatus = nil }
           return .redraw
         }
         return .quit

@@ -360,6 +360,24 @@ import Testing
     #expect(driver.interruptCount == 1)
   }
 
+  @Test func controlCClearsComposerBeforeQuittingWhenIdle() async {
+    let model = CodexSessionModel(
+      snapshot: CodexSnapshot(composer: TextFieldState(text: "unfinished prompt")))
+    model.addImageAttachment(
+      CodexImageAttachment(data: Data([1]), mimeType: "image/png", name: "draft.png"))
+    let driver = Driver()
+    let application = CodexApplication(model: model, driver: driver)
+    let controlC = TerminalEvent.key(KeyEvent(.character("c"), modifiers: [.control]))
+
+    #expect(await application.update(controlC) == .redraw)
+    #expect(model.composer.text.isEmpty)
+    #expect(model.imageAttachments.isEmpty)
+    #expect(driver.interruptCount == 0)
+
+    #expect(await application.update(controlC) == .quit)
+    #expect(driver.interruptCount == 0)
+  }
+
   @Test func fullAccessRequiresASecondExplicitConfirmation() async {
     let model = CodexSessionModel(
       snapshot: CodexSnapshot(

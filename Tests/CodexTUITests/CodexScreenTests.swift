@@ -799,6 +799,26 @@ import Testing
     }
   }
 
+  @Test func maxReasoningIgnitionAssemblesFooterAndAccentsPrompt() {
+    let snapshot = CodexSnapshot(reasoningEffort: "max", showHeader: false)
+    let animation = CodexEffortAnimationFrame(
+      tier: .max, style: .wave, elapsedMilliseconds: 1_320,
+      previousReasoningEffort: "high")
+    let area = Rect(x: 0, y: 0, width: 60, height: 9)
+    var frame = Frame(buffer: Buffer(area: area))
+
+    frame.render(CodexScreen(snapshot: snapshot, effortAnimation: animation), in: area)
+
+    guard let composerRow = frame.buffer.lines().firstIndex(where: { $0.contains("Find and fix") })
+    else {
+      Issue.record("Expected composer row")
+      return
+    }
+    #expect(frame.buffer[Position(x: 0, y: composerRow)].symbol == "›")
+    #expect(frame.buffer[Position(x: 0, y: composerRow)].style.foreground == .rgb(255, 178, 66))
+    #expect(frame.buffer.lines().contains(where: { $0.contains("M A X") }))
+  }
+
   @Test func permissionsPickerMatchesCodexSelectionSurface() {
     let snapshot = CodexSnapshot(
       permissionMode: .askForApproval,
@@ -1128,6 +1148,12 @@ import Testing
     #expect(buffer[Position(x: 0, y: 0)].style.background == .rgb(63, 67, 74))
     #expect(buffer[Position(x: 0, y: 1)].style.background == .rgb(63, 67, 74))
     #expect(buffer[Position(x: 0, y: 2)].style.background == .rgb(63, 67, 74))
+    #expect(buffer[Position(x: 62, y: 0)].style.background == .rgb(63, 67, 74))
+    #expect(buffer[Position(x: 62, y: 1)].style.background == .rgb(63, 67, 74))
+    #expect(buffer[Position(x: 62, y: 2)].style.background == .rgb(63, 67, 74))
+    #expect(buffer[Position(x: 63, y: 0)].style.background == nil)
+    #expect(buffer[Position(x: 63, y: 1)].style.background == nil)
+    #expect(buffer[Position(x: 63, y: 2)].style.background == nil)
     #expect(buffer[Position(x: 21, y: 3)].style.modifiers.contains(.bold))
     #expect(buffer[Position(x: 35, y: 3)].style.foreground == .cyan)
     #expect(buffer[Position(x: 35, y: 3)].style.modifiers.contains(.underlined))
