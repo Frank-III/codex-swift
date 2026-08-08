@@ -80,8 +80,9 @@ transcript pager whose live tail
 tracks streaming responses and tool updates while pinned to the bottom, preserves manual scroll
 position when the user navigates upward, and supports row, page, half-page, top, and bottom movement.
 With an empty idle composer, Escape primes backtrack, a second Escape opens the transcript with the
-latest user turn highlighted, Escape/Left and Right traverse prior turns, and Enter invokes KWWK's
-real rewind operation and restores the selected text and images for editing. Its source-shaped tabs cover All, Common,
+latest user turn highlighted, Escape/Left and Right traverse prior turns, and Enter creates a durable
+branch while restoring the selected text and images for editing. The previous path remains available
+through `/tree`. Its source-shaped tabs cover All, Common,
 Customized, Unbound, App, Composer, and Debug groups; `/keymap debug` and the Debug tab open a live
 keypress inspector that reports the terminal event, canonical config key, assigned action, and
 Default or Custom source while reserving Control-C exclusively for close. Editing supports
@@ -116,9 +117,13 @@ motions and edit operators, and returns to Normal mode after a successful submis
 TermLoom Swift drives the terminal's native steady-bar Insert cursor and restores the user's default
 cursor shape in Normal mode and when the terminal session exits.
 
-Conversations persist under `~/.codex-swift/sessions` through KWWK's append-only JSONL store.
-`/resume`, `/fork`, `/rename`, `/archive`, `/delete`, and `/new` rotate the complete session-scoped
-agent runtime, while Ctrl-R searches prompt history without losing the current draft.
+Conversations persist under `~/.codex-swift/sessions` as Codex-owned append-only JSONL trees.
+`/tree` navigates preserved paths in place, and a durable checkout restores the selected branch after
+restart. `/resume`, `/fork`, `/rename`, `/archive`, `/delete`, and `/new` rotate the complete
+session-scoped agent runtime, while Ctrl-R searches prompt history without losing the current draft.
+Each selected path is projected into a fresh unmodified KWWK agent, keeping KWWK independently
+upgradable. Existing flat KWWK sessions import lazily and receive a backup before their first tree
+write.
 
 `/review` drives source-shaped review presets, `/plan` changes the live agent contract, `/diff`
 includes tracked and untracked files without invoking repository diff helpers, `/copy` writes the

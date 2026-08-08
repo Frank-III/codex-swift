@@ -92,7 +92,7 @@ import Testing
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "codex-swift-session-tests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let store = SessionStore(directory: directory)
+    let store = CodexSessionTreeStore(directory: directory)
     let runtimeModel = try #require(ModelsCatalog.models(for: "openai").first)
     let assistant = AssistantMessage(
       content: [.text(TextContent(text: "Persisted answer"))], api: runtimeModel.api,
@@ -171,11 +171,11 @@ import Testing
     #expect(driver.agent.sessionId == "saved")
   }
 
-  @Test func rewindTruncatesLiveAndPersistedKwwkTranscripts() async throws {
+  @Test func rewindCreatesADurableBranchWithoutDiscardingTheOldPath() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
       "codex-swift-rewind-tests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let store = SessionStore(directory: directory)
+    let store = CodexSessionTreeStore(directory: directory)
     let runtimeModel = try #require(ModelsCatalog.models(for: "openai").first)
     func assistant(_ text: String) -> Message {
       .assistant(
@@ -225,6 +225,11 @@ import Testing
     let loaded = try await store.load(id: "rewind")
     #expect(loaded.messages == Array(messages.prefix(2)))
     #expect(loaded.displayMessages == Array(messages.prefix(2)))
+    let tree = try await store.snapshot(id: "rewind")
+    #expect(tree.items.count == messages.count)
+    #expect(tree.items.contains(where: { $0.preview == "drop this answer" }))
+    #expect(
+      tree.items.first(where: { $0.preview == "drop this answer" })?.isOnActiveBranch == false)
   }
 
   @Test func agentPickerReadsFullKwwkBackgroundHistoryInSpawnOrder() async throws {

@@ -670,6 +670,48 @@ public struct RewindPicker: Hashable, Sendable {
   }
 }
 
+public struct SessionTreePicker: Hashable, Sendable {
+  public var snapshot: CodexSessionTreeSnapshot
+  public var query: TextFieldState
+  public var selection: SelectionState
+
+  public init(
+    snapshot: CodexSessionTreeSnapshot, query: String = "", selectedID: CodexSessionEntryID? = nil
+  ) {
+    self.snapshot = snapshot
+    self.query = TextFieldState(text: query)
+    let items = Self.filtered(snapshot.items, query: query)
+    let preferred = selectedID ?? snapshot.activeLeafID
+    let selectedIndex =
+      preferred.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+      ?? max(0, items.count - 1)
+    selection = SelectionState(selectedIndex: selectedIndex)
+    reconcileSelection()
+  }
+
+  public var filteredItems: [CodexSessionTreeItem] {
+    Self.filtered(snapshot.items, query: query.text)
+  }
+
+  public var selectedIndex: Int { selection.selectedIndex ?? 0 }
+  public var selectedItem: CodexSessionTreeItem? { filteredItems[safe: selectedIndex] }
+
+  public mutating func reconcileSelection() {
+    selection.reconcile(itemCount: filteredItems.count)
+  }
+
+  private static func filtered(
+    _ items: [CodexSessionTreeItem], query: String
+  ) -> [CodexSessionTreeItem] {
+    let terms = query.lowercased().split(whereSeparator: { $0.isWhitespace })
+    guard !terms.isEmpty else { return items }
+    return items.filter { item in
+      let haystack = "\(item.kind.rawValue) \(item.label ?? "") \(item.preview)".lowercased()
+      return terms.allSatisfy(haystack.contains)
+    }
+  }
+}
+
 public struct RequestUserInputOption: Hashable, Sendable {
   public var label: String
   public var description: String
@@ -806,6 +848,7 @@ public enum CodexOverlay: Hashable, Sendable {
   case skills(SkillPicker)
   case fileMentions(FileMentionPicker)
   case rewind(RewindPicker)
+  case sessionTree(SessionTreePicker)
   case shortcuts
 }
 

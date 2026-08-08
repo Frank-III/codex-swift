@@ -946,6 +946,19 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
       if !driver.retryLastPrompt() {
         model.entries.append(TranscriptEntry(content: .notice("Nothing to retry.")))
       }
+    case "tree":
+      do {
+        let tree = try await driver.sessionTree()
+        if tree.items.isEmpty {
+          model.entries.append(TranscriptEntry(content: .notice("No session tree yet.")))
+        } else {
+          model.overlay = .sessionTree(SessionTreePicker(snapshot: tree))
+        }
+      } catch {
+        model.entries.append(
+          TranscriptEntry(
+            content: .error("Could not open session tree: \(error.localizedDescription)")))
+      }
     case "rewind":
       let candidates = driver.rewindCandidates()
       if candidates.isEmpty {
@@ -1175,6 +1188,28 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
         picker.reconcileSelection()
         synchronizeComposerMentionQuery(with: picker.query, sigil: "$")
         model.overlay = .skills(picker)
+        return .redraw
+      }
+    }
+    if case .sessionTree(var picker) = model.overlay {
+      let editsQuery: Bool
+      switch event {
+      case .paste:
+        editsQuery = true
+      case .key(let key):
+        switch key.key {
+        case .character, .backspace, .delete, .left, .right, .home, .end:
+          editsQuery = true
+        default:
+          editsQuery = false
+        }
+      default:
+        editsQuery = false
+      }
+      if editsQuery, picker.query.handle(event) {
+        _ = picker.selection.select(0, itemCount: picker.filteredItems.count)
+        picker.reconcileSelection()
+        model.overlay = .sessionTree(picker)
         return .redraw
       }
     }
@@ -1849,6 +1884,42 @@ public final class CodexApplication: TerminalApplication, InlineViewportSizing,
         }
         insertFileMention(selected)
         model.overlay = nil
+      default:
+        return .ignore
+      }
+      return .redraw
+    case .sessionTree(var picker):
+      switch key.key {
+      case .escape:
+        model.overlay = nil
+      case .up:
+        picker.selection.move(by: -1, itemCount: picker.filteredItems.count)
+        model.overlay = .sessionTree(picker)
+      case .down:
+        picker.selection.move(by: 1, itemCount: picker.filteredItems.count)
+        model.overlay = .sessionTree(picker)
+      case .pageUp:
+        picker.selection.move(by: -10, itemCount: picker.filteredItems.count)
+        model.overlay = .sessionTree(picker)
+      case .pageDown:
+        picker.selection.move(by: 10, itemCount: picker.filteredItems.count)
+        model.overlay = .sessionTree(picker)
+      case .enter:
+        guard let selected = picker.selectedItem else { return .ignore }
+        do {
+          let draft = try await driver.navigateSessionTree(to: selected.id)
+          model.overlay = nil
+          if let draft {
+            model.composer = TextFieldState(text: draft.text)
+            model.imageAttachments = draft.images
+            model.selectedImageAttachmentIndex = draft.images.isEmpty ? nil : 0
+          }
+        } catch {
+          model.overlay = nil
+          model.entries.append(
+            TranscriptEntry(
+              content: .error("Could not navigate tree: \(error.localizedDescription)")))
+        }
       default:
         return .ignore
       }

@@ -3,14 +3,30 @@
 Codex Swift has three intentionally separate layers:
 
 1. `CodexTUI` models the transcript, composer, overlays, shortcuts, session status, and reducers.
-2. `KWWKAgent` supplies streaming model turns, tools, queues, compaction, sessions, subagents, and
-   background work. `KWWKAI` supplies providers and authentication primitives.
+2. `KWWKAgent` supplies streaming model turns, tools, queues, compaction, subagents, and background
+   work. `KWWKAI` supplies providers and authentication primitives. Codex Swift owns durable sessions
+   because its tree, branch, display-history, and extension-state semantics are application policy.
 3. `TermLoom` renders the value snapshot and owns Unicode width, layout, input decoding, inline
    viewport behavior, buffer diffing, and terminal restoration.
 
 The UI never reads KWWK's mutable state while rendering. Agent events are reduced on the main
 actor into a `CodexSnapshot`; rendering is therefore deterministic and snapshot-testable. The
 controller is the sole command boundary back into the harness.
+
+## Persistent session trees
+
+`CodexSessionTreeStore` keeps each logical session as an append-only JSONL tree. Stable entry IDs and
+parent IDs preserve every in-place branch; durable checkout records restore the selected leaf even
+when the user navigates and exits before submitting another prompt. `/tree` renders the complete
+session graph in Codex's overlay style. Selecting a user message checks out its parent and restores
+its text and images for editing, while selecting a complete assistant/tool boundary continues after
+that entry. `/rewind` uses the same non-destructive branch operation.
+
+The selected root-to-leaf path is projected into ordinary KWWK `[Message]` state. Branch navigation
+retires the old agent and builds a fresh agent from that projection, so KWWK remains an unmodified,
+upgradable dependency. Compaction nodes replace model-facing context only for their descendants;
+full display history and sibling branches remain available. Existing flat KWWK session files import
+as linear trees and are backed up under `sessions/legacy` on the first tree write.
 
 The default experience is inline. Ownership is deliberately split at the source/terminal boundary:
 

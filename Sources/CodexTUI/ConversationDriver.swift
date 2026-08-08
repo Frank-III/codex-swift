@@ -57,6 +57,8 @@ public protocol CodexConversationDriving: AnyObject {
   @discardableResult func retryLastPrompt() -> Bool
   func rewindCandidates() -> [RewindCandidate]
   func rewind(to candidateID: Int) async throws -> RewindDraft
+  func sessionTree() async throws -> CodexSessionTreeSnapshot
+  func navigateSessionTree(to entryID: CodexSessionEntryID) async throws -> RewindDraft?
   @discardableResult func resolveApproval(requestID: String, decision: ApprovalDecision) -> Bool
   @discardableResult func submitUserInput(_ request: RequestUserInputRequest) -> Bool
 }
@@ -100,6 +102,13 @@ extension CodexConversationDriving {
   @discardableResult public func retryLastPrompt() -> Bool { false }
   public func rewindCandidates() -> [RewindCandidate] { [] }
   public func rewind(to candidateID: Int) async throws -> RewindDraft { RewindDraft(text: "") }
+  public func sessionTree() async throws -> CodexSessionTreeSnapshot {
+    CodexSessionTreeSnapshot(
+      sessionID: "", items: [], activeLeafID: nil, selectedEditableEntryID: nil)
+  }
+  public func navigateSessionTree(to entryID: CodexSessionEntryID) async throws -> RewindDraft? {
+    nil
+  }
   @discardableResult
   public func resolveApproval(requestID: String, decision: ApprovalDecision) -> Bool { false }
   @discardableResult
@@ -115,7 +124,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
 
   private struct ParkedRuntime {
     var codingAgent: CodingAgent
-    var recorder: SessionRecorder?
+    var recorder: CodexSessionTreeRecorder?
     var recorderUnsubscribe: Unsubscribe?
     var eventUnsubscribe: Unsubscribe?
     var sessionID: String
@@ -138,13 +147,13 @@ public final class CodexAgentDriver: CodexConversationDriving {
   private let userInputs: RequestUserInputCoordinator
   private let modelsByID: [String: KWWKAI.Model]
   private var baseSystemPrompt: String
-  private let sessionStore: SessionStore?
+  private let sessionStore: CodexSessionTreeStore?
   private let backgroundManager: BackgroundTaskManager?
   private let availableSkills: [SkillSummary]
   private let agentFactory:
     (@MainActor @Sendable (String, KWWKAI.Model, [Message]) async -> CodingAgent)?
   private var codingAgent: CodingAgent?
-  private var recorder: SessionRecorder?
+  private var recorder: CodexSessionTreeRecorder?
   private var recorderUnsubscribe: Unsubscribe?
   private let goalStore = GoalStore()
   private var parkedParent: ParkedRuntime?
@@ -183,7 +192,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
     codingAgent: CodingAgent,
     model: CodexSessionModel,
     availableModels: [KWWKAI.Model],
-    sessionStore: SessionStore,
+    sessionStore: CodexSessionTreeStore,
     backgroundManager: BackgroundTaskManager,
     availableSkills: [SkillSummary] = [],
     agentFactory:
@@ -206,7 +215,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
     self.agentFactory = agentFactory
     model.sessionID = codingAgent.agent.sessionId ?? model.sessionID
     bind(codingAgent.agent)
-    attachRecorder(persistedCount: 0)
+    attachRecorder()
   }
 
   public var isRunning: Bool { agent.state.isStreaming }
@@ -385,9 +394,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
       let inferredTitle: String
       if let title = info.title, !title.isEmpty {
         inferredTitle = title
-      } else if let loaded = try? await sessionStore.load(id: info.id),
-        let first = loaded.displayMessages.compactMap(Self.userText).first
-      {
+      } else if let first = info.firstUserText {
         inferredTitle = first.replacingOccurrences(of: "\n", with: " ")
       } else {
         inferredTitle = "Untitled session"
@@ -406,31 +413,32 @@ public final class CodexAgentDriver: CodexConversationDriving {
     if id == model.sessionID {
       await recorder?.flush(messages: agent.state.messages)
     }
-    let loaded = try await sessionStore.load(id: id)
-    let selected = modelForSession(loaded)
-    let replacementID = fork ? UUID().uuidString : loaded.header.id
+    let source = try await sessionStore.load(id: id)
+    let selected = modelForSession(source)
+    let replacementID = fork ? UUID().uuidString : source.header.id
+    let loaded =
+      if fork {
+        try await sessionStore.fork(
+          sourceID: id, targetID: replacementID, cwd: model.directory,
+          model: selected.id, provider: selected.provider)
+      } else {
+        source
+      }
     let replacement = await agentFactory(replacementID, selected, loaded.messages)
-    await replaceAgent(
-      with: replacement, sessionID: replacementID,
-      persistedCount: fork ? 0 : loaded.persistedContextCount)
-    model.entries = Self.transcriptEntries(from: loaded.displayMessages)
-    model.history = loaded.displayMessages.compactMap(Self.userText)
-    model.historyIndex = nil
+    await replaceAgent(with: replacement, sessionID: replacementID)
+    restoreSessionPresentation(loaded)
     model.sessionID = replacementID
-    model.threadTitle = loaded.title
-    model.model = selected.id
-    model.modelProvider = selected.provider
-    let resumedThinking =
-      loaded.thinkingLevel.flatMap(ModelThinkingLevel.init(rawValue:))
-      ?? ModelThinkingLevel(rawValue: agent.state.thinkingLevel.rawValue) ?? .off
-    let supportedThinking = clampThinkingLevel(selected, resumedThinking)
-    let normalizedThinking = ThinkingLevel(rawValue: supportedThinking.rawValue) ?? .off
-    agent.state.thinkingLevel = normalizedThinking
-    model.reasoningEffort = normalizedThinking.rawValue
+    if let selectedEntryID = loaded.selectedEditableEntryID,
+      let editable = try await sessionStore.editableMessage(
+        id: replacementID, entryID: selectedEntryID),
+      let draft = Self.rewindDraft(editable)
+    {
+      model.composer = TextFieldState(text: draft.text)
+      model.imageAttachments = draft.images
+      model.selectedImageAttachmentIndex = draft.images.isEmpty ? nil : 0
+    }
     if fork {
-      await recorder?.flush(messages: loaded.messages)
-      if let title = loaded.title { await recorder?.recordTitle(title) }
-      model.entries.append(TranscriptEntry(content: .notice("Forked session (id)")))
+      model.entries.append(TranscriptEntry(content: .notice("Forked session \(replacementID)")))
     }
   }
 
@@ -441,7 +449,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
     }
     let replacementID = UUID().uuidString
     let replacement = await agentFactory(replacementID, agent.state.model, [])
-    await replaceAgent(with: replacement, sessionID: replacementID, persistedCount: 0)
+    await replaceAgent(with: replacement, sessionID: replacementID)
     model.sessionID = replacementID
     model.threadTitle = nil
     model.entries.removeAll()
@@ -465,26 +473,18 @@ public final class CodexAgentDriver: CodexConversationDriving {
       provider: agent.state.model.provider)
     recorderUnsubscribe?()
     recorderUnsubscribe = nil
-    let directory = await sessionStore.directory
-    let source = directory.appendingPathComponent("\(model.sessionID).jsonl")
-    let archive = directory.appendingPathComponent("archived", isDirectory: true)
-    try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
-    let destination = archive.appendingPathComponent(source.lastPathComponent)
-    if FileManager.default.fileExists(atPath: destination.path) {
-      try FileManager.default.removeItem(at: destination)
-    }
-    try FileManager.default.moveItem(at: source, to: destination)
+    await recorder?.waitForPendingWrites()
+    recorder = nil
+    try await sessionStore.archive(id: model.sessionID)
   }
 
   public func deleteSession() async throws {
     guard let sessionStore else { return }
     recorderUnsubscribe?()
     recorderUnsubscribe = nil
-    let directory = await sessionStore.directory
-    let source = directory.appendingPathComponent("\(model.sessionID).jsonl")
-    if FileManager.default.fileExists(atPath: source.path) {
-      try FileManager.default.removeItem(at: source)
-    }
+    await recorder?.waitForPendingWrites()
+    recorder = nil
+    try await sessionStore.delete(id: model.sessionID)
   }
 
   public func compactSession() async {
@@ -508,8 +508,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
       switch outcome {
       case .compacted(let count, let hasLedger):
         await recorder?.recordCompaction(
-          messages: agent.state.messages, messagesCompacted: count,
-          reason: .compact)
+          messages: agent.state.messages, messagesCompacted: count)
         model.entries.append(
           TranscriptEntry(
             content: .notice(
@@ -833,46 +832,59 @@ public final class CodexAgentDriver: CodexConversationDriving {
 
   public func rewind(to candidateID: Int) async throws -> RewindDraft {
     guard !isRunning, agent.state.messages.indices.contains(candidateID),
-      let draft = Self.rewindDraft(agent.state.messages[candidateID])
+      let draft = Self.rewindDraft(agent.state.messages[candidateID]),
+      let sessionStore, let agentFactory
     else { throw RewindError.invalidCandidate }
 
     let expected = agent.state.messages[candidateID]
-    let currentAgent = agent
-    let currentRecorder = recorder
-    let currentSessionID = model.sessionID
-    let removed = agent.state.messages.count - candidateID
-    let applied = try await currentAgent.withMaintenance { @MainActor in
-      guard self.agent === currentAgent,
-        currentAgent.state.messages.indices.contains(candidateID),
-        currentAgent.state.messages[candidateID] == expected
-      else { return false }
-      let kept = Array(currentAgent.state.messages[..<candidateID])
-      currentAgent.state.messages = kept
-      currentAgent.clearAllQueues()
-      self.retryPrompt = nil
-      self.model.queuedMessages.removeAll()
-      await currentRecorder?.recordCompaction(
-        messages: kept, messagesCompacted: removed, reason: .rewind)
-      guard self.agent === currentAgent, self.model.sessionID == currentSessionID else {
-        return false
-      }
-      if let sessionStore = self.sessionStore,
-        let loaded = try? await sessionStore.load(id: currentSessionID)
-      {
-        self.model.entries = Self.transcriptEntries(from: loaded.displayMessages)
-      } else {
-        self.model.entries = Self.transcriptEntries(from: kept)
-      }
-      self.model.history = kept.compactMap(Self.userText)
-      self.model.historyIndex = nil
-      return true
+    await recorder?.flush(messages: agent.state.messages)
+    let loaded: CodexSessionTreeLoadedSession
+    do {
+      loaded = try await sessionStore.checkoutModelMessage(
+        id: model.sessionID, index: candidateID, expected: expected)
+    } catch {
+      throw RewindError.staleCandidate
     }
-    guard applied else { throw RewindError.staleCandidate }
+    let selected = modelForSession(loaded)
+    let replacement = await agentFactory(model.sessionID, selected, loaded.messages)
+    await replaceAgent(
+      with: replacement, sessionID: model.sessionID, preserveBackgroundTasks: true)
+    restoreSessionPresentation(loaded)
+    retryPrompt = nil
+    model.queuedMessages.removeAll()
     model.entries.append(
-      TranscriptEntry(
-        content: .notice(
-          "⤺ Rewound · dropped \(removed) message\(removed == 1 ? "" : "s")")))
+      TranscriptEntry(content: .notice("Created a new branch from the selected prompt")))
     return draft
+  }
+
+  public func sessionTree() async throws -> CodexSessionTreeSnapshot {
+    guard let sessionStore else {
+      return CodexSessionTreeSnapshot(
+        sessionID: model.sessionID, items: [], activeLeafID: nil,
+        selectedEditableEntryID: nil)
+    }
+    await recorder?.flush(messages: agent.state.messages)
+    return try await sessionStore.snapshot(id: model.sessionID)
+  }
+
+  public func navigateSessionTree(
+    to entryID: CodexSessionEntryID
+  ) async throws -> RewindDraft? {
+    guard !isRunning, let sessionStore, let agentFactory else {
+      throw RewindError.invalidCandidate
+    }
+    await recorder?.flush(messages: agent.state.messages)
+    let loaded = try await sessionStore.checkout(id: model.sessionID, targetID: entryID)
+    let editable = try await sessionStore.editableMessage(id: model.sessionID, entryID: entryID)
+      .flatMap(Self.rewindDraft)
+    let selected = modelForSession(loaded)
+    let replacement = await agentFactory(model.sessionID, selected, loaded.messages)
+    await replaceAgent(
+      with: replacement, sessionID: model.sessionID, preserveBackgroundTasks: true)
+    restoreSessionPresentation(loaded)
+    retryPrompt = nil
+    model.queuedMessages.removeAll()
+    return editable
   }
 
   @discardableResult
@@ -1091,19 +1103,25 @@ public final class CodexAgentDriver: CodexConversationDriving {
     await discarded.closeSession()
   }
 
-  private func attachRecorder(persistedCount: Int) {
+  private func attachRecorder() {
     guard let sessionStore else { return }
-    let newRecorder = SessionRecorder(
-      store: sessionStore, sessionId: model.sessionID, cwd: model.directory,
+    let newRecorder = CodexSessionTreeRecorder(
+      store: sessionStore, sessionID: model.sessionID, cwd: model.directory,
       model: agent.state.model.id, provider: agent.state.model.provider,
-      persistedCount: persistedCount)
+      onPersistenceError: { [weak model] error in
+        Task { @MainActor in
+          model?.entries.append(
+            TranscriptEntry(content: .error("Session persistence failed: \(error)")))
+        }
+      })
     recorder = newRecorder
     recorderUnsubscribe = newRecorder.attach(to: agent)
     Task { await newRecorder.ensureCreated() }
   }
 
   private func replaceAgent(
-    with replacement: CodingAgent, sessionID: String, persistedCount: Int
+    with replacement: CodingAgent, sessionID: String,
+    preserveBackgroundTasks: Bool = false
   ) async {
     let outgoing = agent
     outgoing.retire()
@@ -1114,7 +1132,7 @@ public final class CodexAgentDriver: CodexConversationDriving {
     await codingAgent?.detachBackground?()
     outgoing.clearAllQueues()
     await outgoing.waitForIdle()
-    if let outgoingID = outgoing.sessionId {
+    if !preserveBackgroundTasks, let outgoingID = outgoing.sessionId {
       await backgroundManager?.closeSession(sessionId: outgoingID)
     }
     await outgoing.closeSession()
@@ -1127,14 +1145,31 @@ public final class CodexAgentDriver: CodexConversationDriving {
     retryPrompt = nil
     bind(replacement.agent)
     applySystemPrompt()
-    attachRecorder(persistedCount: persistedCount)
+    attachRecorder()
   }
 
-  private func modelForSession(_ loaded: SessionStore.LoadedSession) -> KWWKAI.Model {
+  private func modelForSession(_ loaded: CodexSessionTreeLoadedSession) -> KWWKAI.Model {
     let values = Array(modelsByID.values)
     return values.first {
       $0.id == loaded.model && (loaded.provider == nil || $0.provider == loaded.provider)
     } ?? agent.state.model
+  }
+
+  private func restoreSessionPresentation(_ loaded: CodexSessionTreeLoadedSession) {
+    model.entries = Self.transcriptEntries(from: loaded.displayMessages)
+    model.history = loaded.displayMessages.compactMap(Self.userText)
+    model.historyIndex = nil
+    model.threadTitle = loaded.title
+    let selected = modelForSession(loaded)
+    model.model = selected.id
+    model.modelProvider = selected.provider
+    let requested =
+      loaded.thinkingLevel.flatMap(ModelThinkingLevel.init(rawValue:))
+      ?? ModelThinkingLevel(rawValue: agent.state.thinkingLevel.rawValue) ?? .off
+    let supported = clampThinkingLevel(selected, requested)
+    let normalized = ThinkingLevel(rawValue: supported.rawValue) ?? .off
+    agent.state.thinkingLevel = normalized
+    model.reasoningEffort = normalized.rawValue
   }
 
   private func persistRuntimeMetadata() {
@@ -1143,6 +1178,9 @@ public final class CodexAgentDriver: CodexConversationDriving {
     let selected = agent.state.model
     let thinking = agent.state.thinkingLevel.rawValue
     Task {
+      try? await sessionStore.createIfMissing(
+        id: sessionID, cwd: model.directory, model: selected.id,
+        provider: selected.provider)
       try? await sessionStore.appendMeta(
         id: sessionID, model: selected.id, provider: selected.provider,
         thinkingLevel: thinking)
