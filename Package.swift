@@ -12,7 +12,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/Frank-III/termloom.git", branch: "main"),
-    .package(url: "https://github.com/EYHN/kwwk.git", exact: "0.1.36"),
+    .package(url: "https://github.com/EYHN/kwwk.git", exact: "0.1.45"),
   ],
   targets: [
     .target(

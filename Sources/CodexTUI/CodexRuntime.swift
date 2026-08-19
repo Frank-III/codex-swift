@@ -174,6 +174,8 @@ public enum CodexRuntime {
         oauthProvider = "anthropic"
       } else if scope.hasPrefix("openai-codex") {
         oauthProvider = "openai-codex"
+      } else if scope == "xai" || scope == "xai-auth" {
+        oauthProvider = "xai"
       } else {
         oauthProvider = nil
       }
@@ -188,7 +190,9 @@ public enum CodexRuntime {
         OAuthCredentials(access: access, refresh: refresh, expires: expires, extras: extras),
         for: oauthProvider)
       let accountManager = OAuthManager(store: accountStore)
-      oauthTokenResolvers[scope] = {
+      // xai models always carry provider "xai", even when pi stores the login
+      // under a differently-suffixed scope like "xai-auth".
+      oauthTokenResolvers[oauthProvider == "xai" ? "xai" : scope] = {
         try await accountManager.apiKey(for: oauthProvider)
       }
     }
@@ -262,6 +266,12 @@ public enum CodexRuntime {
       sourceId: "codex-swift-pi-models")
     if oauthTokenResolvers["anthropic"] != nil {
       await APIRegistry.shared.register(ProviderVariants.anthropicOAuth(), scope: "anthropic")
+    }
+    if oauthTokenResolvers["xai"] != nil {
+      // Grok subscription tokens ride the plain completions endpoint as Bearer
+      // keys; the resolver above supplies (and refreshes) them per request.
+      await APIRegistry.shared.register(OpenAICompletionsProvider(), scope: "xai")
+      models += ModelsCatalog.models(for: "xai")
     }
 
     var seen: Set<String> = []
